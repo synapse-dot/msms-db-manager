@@ -41,6 +41,14 @@ add_library(msms_core STATIC
     src/ui/QueryConsoleView.cpp
     src/ui/RawTableView.h
     src/ui/RawTableView.cpp
+    src/ui/MeetingsTableView.h
+    src/ui/MeetingsTableView.cpp
+    src/ui/MeetingFormView.h
+    src/ui/MeetingFormView.cpp
+    src/ui/AttendeesTableView.h
+    src/ui/AttendeesTableView.cpp
+    src/ui/AttendanceRegisterView.h
+    src/ui/AttendanceRegisterView.cpp
 )
 
 target_link_libraries(msms_core
@@ -93,6 +101,21 @@ target_link_libraries(MSMSMemberTests
 )
 
 add_test(NAME MSMSMemberTests COMMAND MSMSMemberTests)
+
+qt_add_executable(MSMSMeetingTests
+    tests/test_meetings.cpp
+)
+
+target_link_libraries(MSMSMeetingTests
+    PRIVATE
+        msms_core
+        Qt6::Test
+        Qt6::Widgets
+        Qt6::Sql
+)
+
+add_test(NAME MSMSMeetingTests COMMAND MSMSMeetingTests)
+
 
 qt_add_executable(capture_screenshots
     tests/capture_screenshots.cpp
