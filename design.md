@@ -259,9 +259,18 @@ The main workspace occupies the area to the right of navigation and above the SQ
   - `Ctrl+Q` — quit the application.
 - Shortcuts must respect the context of the current page and must not bypass save/discard protections.
 
-### 2.5 Theme
+### 2.5 Visual Design
 
-Use **Catppuccin Mocha** as the application theme. Use system fonts and familiar platform iconography rather than requiring a custom font or an elaborate icon system.
+MSMS Manager shall use a **native platform look with restrained customisation**. The interface should feel familiar, professional, and practical for successive society secretaries, prioritising usability and consistency over decorative styling.
+
+- **Native appearance:** Prefer Qt's standard platform styling and conventional widgets. Menus, buttons, tables, input fields, and dialogs should behave and appear as users expect on their operating system.
+- **Typography:** Use system fonts and conventional platform icons wherever practical.
+- **Layout:** Maintain consistent spacing, alignment, sizing, and visual hierarchy throughout the application.
+- **Colour:** Use restrained accent colours where necessary. Preserve appropriate text contrast and clear visual distinction between interactive controls and ordinary content.
+- **Customisation:** Apply only the styling necessary to improve clarity and consistency. Avoid unnecessary decorative effects and extensive global Qt Style Sheets (QSS) that override native platform appearances.
+- **Cross-platform support:** Preserve usability across supported operating systems while allowing appropriate platform-specific visual differences.
+
+The application shall not impose Catppuccin Mocha or another complete custom theme. Terminal styling, neumorphism, and deliberate retro or skeuomorphic styling are not part of the design direction.
 
 ## 3. Navigation tree
 
