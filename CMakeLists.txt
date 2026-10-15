@@ -31,6 +31,10 @@ add_library(msms_core STATIC
     src/ui/DatabaseSelectionDialog.cpp
     src/ui/AllMembersView.h
     src/ui/AllMembersView.cpp
+    src/ui/MembersTableView.h
+    src/ui/MembersTableView.cpp
+    src/ui/MemberFormView.h
+    src/ui/MemberFormView.cpp
     src/ui/PlaceholderView.h
     src/ui/PlaceholderView.cpp
     src/ui/QueryConsoleView.h
@@ -74,7 +78,34 @@ target_link_libraries(MSMSTests
         Qt6::Sql
 )
 
-add_test(NAME MSMSTests COMMAND MSMSTests)
+add_test(NAME MSMSDatabaseTests COMMAND MSMSTests)
+
+qt_add_executable(MSMSMemberTests
+    tests/test_members.cpp
+)
+
+target_link_libraries(MSMSMemberTests
+    PRIVATE
+        msms_core
+        Qt6::Test
+        Qt6::Widgets
+        Qt6::Sql
+)
+
+add_test(NAME MSMSMemberTests COMMAND MSMSMemberTests)
+
+qt_add_executable(capture_screenshots
+    tests/capture_screenshots.cpp
+    mainwindow.cpp
+    mainwindow.h
+)
+
+target_link_libraries(capture_screenshots
+    PRIVATE
+        msms_core
+        Qt6::Widgets
+        Qt6::Sql
+)
 
 include(GNUInstallDirs)
 

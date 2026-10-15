@@ -7,13 +7,14 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
-    app.setApplicationName("MSMSManager");
+    app.setApplicationName("MSMS HQ");
+    app.setApplicationDisplayName("MSMS HQ");
     app.setApplicationVersion("1.0.0");
     app.setOrganizationName("MSMS");
     app.setOrganizationDomain("msms.org");
 
-    // Apply Catppuccin Mocha theme
-    MSMS::Theme::applyCatppuccinMocha(app);
+    // Apply native platform styling with restrained customisation
+    MSMS::Theme::applyNativeTheme(app);
 
     MSMS::MainWindow window;
     if (!window.initializeDatabase()) {

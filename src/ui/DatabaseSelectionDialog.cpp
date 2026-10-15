@@ -15,7 +15,7 @@ namespace MSMS {
 DatabaseSelectionDialog::DatabaseSelectionDialog(QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("MSMS Manager — Select Database"));
+    setWindowTitle(tr("MSMS HQ — Select Database"));
     setMinimumWidth(480);
     setModal(true);
 
@@ -24,13 +24,13 @@ DatabaseSelectionDialog::DatabaseSelectionDialog(QWidget *parent)
     mainLayout->setContentsMargins(24, 24, 24, 24);
 
     // Title / Header
-    QLabel *titleLabel = new QLabel(tr("MSMS Manager"), this);
+    QLabel *titleLabel = new QLabel(tr("MSMS HQ"), this);
     titleLabel->setProperty("heading", true);
-    titleLabel->setStyleSheet("font-size: 18px; font-weight: bold; color: #89b4fa;");
+    titleLabel->setStyleSheet("font-size: 18px; font-weight: bold;");
     mainLayout->addWidget(titleLabel);
 
     QLabel *descLabel = new QLabel(
-        tr("Welcome to MSMS Manager. An active SQLite database is required to manage membership and society records.\n\nPlease choose an option below to get started:"),
+        tr("Welcome to MSMS HQ. An active SQLite database is required to manage membership and society records.\n\nPlease choose an option below to get started:"),
         this
     );
     descLabel->setWordWrap(true);

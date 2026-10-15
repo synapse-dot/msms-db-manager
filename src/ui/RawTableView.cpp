@@ -23,11 +23,11 @@ RawTableView::RawTableView(const QString &tableName, QWidget *parent)
     QVBoxLayout *titleLayout = new QVBoxLayout();
 
     m_titleLabel = new QLabel(QString("Raw Table: %1").arg(tableName), this);
-    m_titleLabel->setStyleSheet("font-size: 18px; font-weight: bold; color: #89b4fa;");
+    m_titleLabel->setStyleSheet("font-size: 18px; font-weight: bold;");
     titleLayout->addWidget(m_titleLabel);
 
     QLabel *descLabel = new QLabel(tr("Raw database inspector view (read-only)"), this);
-    descLabel->setStyleSheet("color: #a6adc8; font-size: 12px;");
+    descLabel->setStyleSheet("color: palette(placeholder-text); font-size: 12px;");
     titleLayout->addWidget(descLabel);
 
     headerLayout->addLayout(titleLayout);
@@ -48,7 +48,7 @@ RawTableView::RawTableView(const QString &tableName, QWidget *parent)
     mainLayout->addWidget(m_tableView, 1);
 
     m_statusLabel = new QLabel(this);
-    m_statusLabel->setStyleSheet("color: #a6adc8; font-size: 12px;");
+    m_statusLabel->setStyleSheet("color: palette(placeholder-text); font-size: 12px;");
     mainLayout->addWidget(m_statusLabel);
 
     loadTable(tableName);

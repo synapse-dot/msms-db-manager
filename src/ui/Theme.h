@@ -7,8 +7,10 @@ namespace MSMS {
 
 class Theme {
 public:
-    static void applyCatppuccinMocha(QApplication &app);
-    static QString catppuccinMochaQss();
+    static void applyNativeTheme(QApplication &app);
+    // Backward compatibility alias
+    static void applyCatppuccinMocha(QApplication &app) { applyNativeTheme(app); }
+    static QString restrainedQss();
 };
 
 } // namespace MSMS
