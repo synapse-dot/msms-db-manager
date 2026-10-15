@@ -3,6 +3,10 @@
 #include "ui/DatabaseSelectionDialog.h"
 #include "ui/MembersTableView.h"
 #include "ui/MemberFormView.h"
+#include "ui/MeetingsTableView.h"
+#include "ui/MeetingFormView.h"
+#include "ui/AttendeesTableView.h"
+#include "ui/AttendanceRegisterView.h"
 #include "ui/QueryConsoleView.h"
 #include "ui/PlaceholderView.h"
 #include "ui/RawTableView.h"
@@ -45,13 +49,11 @@ void MainWindow::setupUi()
     resize(1100, 720);
     setMinimumSize(850, 500);
 
-    // Central widget layout
     QWidget *centralContainer = new QWidget(this);
     QVBoxLayout *containerLayout = new QVBoxLayout(centralContainer);
     containerLayout->setContentsMargins(0, 0, 0, 0);
     containerLayout->setSpacing(0);
 
-    // Splitter for Navigation Tree and Workspace
     QSplitter *splitter = new QSplitter(Qt::Horizontal, centralContainer);
     splitter->setChildrenCollapsible(false);
 
@@ -61,14 +63,12 @@ void MainWindow::setupUi()
     setupWorkspace();
     splitter->addWidget(m_workspace);
 
-    // 25% nav, 75% workspace
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
     splitter->setSizes({240, 860});
 
     containerLayout->addWidget(splitter, 1);
 
-    // Bottom query bar
     m_queryBar = new QueryEntryBar(centralContainer);
     connect(m_queryBar, &QueryEntryBar::executeQueryRequested, this, &MainWindow::onExecuteQuery);
     connect(m_queryBar, &QueryEntryBar::openDialogRequested, this, &MainWindow::onOpenQueryConsole);
@@ -82,22 +82,21 @@ void MainWindow::setupUi()
 
 void MainWindow::setupMenuBar()
 {
-    // Order: File, Tools, Tables, Forms, Help
     QMenuBar *mBar = menuBar();
 
-    // 1. File Menu
+    // 1. File
     QMenu *fileMenu = mBar->addMenu(tr("&File"));
 
     QAction *actExportSql = fileMenu->addAction(tr("Export Database (.sql)"));
-    actExportSql->setEnabled(false); // Future milestone
+    actExportSql->setEnabled(false);
     actExportSql->setToolTip(tr("Feature scheduled for a future milestone."));
 
     QAction *actBackup = fileMenu->addAction(tr("Save Database Backup..."));
-    actBackup->setEnabled(false); // Future milestone
+    actBackup->setEnabled(false);
     actBackup->setToolTip(tr("Feature scheduled for a future milestone."));
 
     QAction *actRestore = fileMenu->addAction(tr("Restore Database Backup..."));
-    actRestore->setEnabled(false); // Future milestone
+    actRestore->setEnabled(false);
     actRestore->setToolTip(tr("Feature scheduled for a future milestone."));
 
     fileMenu->addSeparator();
@@ -115,7 +114,7 @@ void MainWindow::setupMenuBar()
     actExit->setShortcut(QKeySequence(tr("Ctrl+Q")));
     connect(actExit, &QAction::triggered, this, &QMainWindow::close);
 
-    // 2. Tools Menu
+    // 2. Tools
     QMenu *toolsMenu = mBar->addMenu(tr("&Tools"));
 
     QAction *actOpenQuery = toolsMenu->addAction(tr("&Open Query Console"));
@@ -125,28 +124,18 @@ void MainWindow::setupMenuBar()
     QAction *actVerifyIntegrity = toolsMenu->addAction(tr("&Verify Database Integrity"));
     connect(actVerifyIntegrity, &QAction::triggered, this, &MainWindow::onVerifyIntegrity);
 
-    // 3. Tables Menu — Raw Database Inspector
+    // 3. Tables (raw inspector)
     QMenu *tablesMenu = mBar->addMenu(tr("&Tables"));
     const QStringList rawTables = {
-        "members",
-        "meetings",
-        "meeting_attendance",
-        "projects",
-        "project_members",
-        "committee_appointments",
-        "activities",
-        "external_competitions",
-        "competition_participants"
+        "members", "meetings", "meeting_attendance", "projects", "project_members",
+        "committee_appointments", "activities", "external_competitions", "competition_participants"
     };
-
     for (const QString &tbl : rawTables) {
         QAction *tblAct = tablesMenu->addAction(tbl);
-        connect(tblAct, &QAction::triggered, this, [this, tbl]() {
-            onRawTableTriggered(tbl);
-        });
+        connect(tblAct, &QAction::triggered, this, [this, tbl]() { onRawTableTriggered(tbl); });
     }
 
-    // 4. Forms Menu — Direct Form Launchers
+    // 4. Forms
     QMenu *formsMenu = mBar->addMenu(tr("F&orms"));
     const QStringList directForms = {
         "New / Edit Member",
@@ -159,15 +148,12 @@ void MainWindow::setupMenuBar()
         "New / Edit Competitions",
         "New / Edit Competition Team Assignments"
     };
-
     for (const QString &frm : directForms) {
         QAction *frmAct = formsMenu->addAction(frm);
-        connect(frmAct, &QAction::triggered, this, [this, frm]() {
-            onFormTriggered(frm);
-        });
+        connect(frmAct, &QAction::triggered, this, [this, frm]() { onFormTriggered(frm); });
     }
 
-    // 5. Help Menu
+    // 5. Help
     QMenu *helpMenu = mBar->addMenu(tr("&Help"));
     QAction *actAbout = helpMenu->addAction(tr("&About"));
     connect(actAbout, &QAction::triggered, this, &MainWindow::onAbout);
@@ -201,45 +187,45 @@ void MainWindow::setupNavigationTree()
 
     // 3.1 Members
     QTreeWidgetItem *catMembers = addCategory(tr("Members"));
-    m_allMembersItem = addSubItem(catMembers, tr("All Members"), "table", "all_members");
-    m_activeMembersItem = addSubItem(catMembers, tr("Active Members"), "table", "active_members");
-    m_newMemberItem = addSubItem(catMembers, tr("New / Edit Member"), "form", "form_member");
+    m_allMembersItem   = addSubItem(catMembers, tr("All Members"),       "table", "all_members");
+    m_activeMembersItem= addSubItem(catMembers, tr("Active Members"),    "table", "active_members");
+    m_newMemberItem    = addSubItem(catMembers, tr("New / Edit Member"), "form",  "form_member");
 
     // 3.2 Meetings
     QTreeWidgetItem *catMeetings = addCategory(tr("Meetings"));
-    addSubItem(catMeetings, tr("Annual General Meetings"), "table", "agm");
-    addSubItem(catMeetings, tr("Extraordinary General Meetings"), "table", "egm");
-    addSubItem(catMeetings, tr("Executive Committee Meetings"), "table", "ecm");
-    addSubItem(catMeetings, tr("Attendees"), "table", "attendees");
-    addSubItem(catMeetings, tr("New / Edit Meeting"), "form", "form_meeting");
-    addSubItem(catMeetings, tr("Attendance Register"), "form", "form_attendance");
+    m_agmItem               = addSubItem(catMeetings, tr("Annual General Meetings"),        "table", "agm");
+    m_egmItem               = addSubItem(catMeetings, tr("Extraordinary General Meetings"), "table", "egm");
+    m_ecmItem               = addSubItem(catMeetings, tr("Executive Committee Meetings"),   "table", "ecm");
+    m_attendeesItem         = addSubItem(catMeetings, tr("Attendees"),                      "table", "attendees");
+    m_newMeetingItem        = addSubItem(catMeetings, tr("New / Edit Meeting"),             "form",  "form_meeting");
+    m_attendanceRegisterItem= addSubItem(catMeetings, tr("Attendance Register"),            "form",  "form_attendance");
 
     // 3.3 Projects
     QTreeWidgetItem *catProjects = addCategory(tr("Projects"));
-    addSubItem(catProjects, tr("All Projects"), "table", "all_projects");
-    addSubItem(catProjects, tr("Ongoing Projects"), "table", "ongoing_projects");
-    addSubItem(catProjects, tr("Completed Projects"), "table", "completed_projects");
-    addSubItem(catProjects, tr("Project Teams"), "table", "project_teams");
-    addSubItem(catProjects, tr("New / Edit Project"), "form", "form_project");
-    addSubItem(catProjects, tr("New / Edit Project Members"), "form", "form_project_members");
+    addSubItem(catProjects, tr("All Projects"),              "table", "all_projects");
+    addSubItem(catProjects, tr("Ongoing Projects"),          "table", "ongoing_projects");
+    addSubItem(catProjects, tr("Completed Projects"),        "table", "completed_projects");
+    addSubItem(catProjects, tr("Project Teams"),             "table", "project_teams");
+    addSubItem(catProjects, tr("New / Edit Project"),        "form",  "form_project");
+    addSubItem(catProjects, tr("New / Edit Project Members"),"form",  "form_project_members");
 
     // 3.4 Committee
     QTreeWidgetItem *catCommittee = addCategory(tr("Committee"));
-    addSubItem(catCommittee, tr("All Appointments"), "table", "all_appointments");
-    addSubItem(catCommittee, tr("Current Committee"), "table", "current_committee");
-    addSubItem(catCommittee, tr("New / Edit Appointment"), "form", "form_appointment");
+    addSubItem(catCommittee, tr("All Appointments"),       "table", "all_appointments");
+    addSubItem(catCommittee, tr("Current Committee"),      "table", "current_committee");
+    addSubItem(catCommittee, tr("New / Edit Appointment"), "form",  "form_appointment");
 
     // 3.5 Activities
     QTreeWidgetItem *catActivities = addCategory(tr("Activities"));
-    addSubItem(catActivities, tr("All Activities"), "table", "all_activities");
-    addSubItem(catActivities, tr("New / Edit Activity"), "form", "form_activity");
+    addSubItem(catActivities, tr("All Activities"),      "table", "all_activities");
+    addSubItem(catActivities, tr("New / Edit Activity"), "form",  "form_activity");
 
     // 3.6 External Competition
     QTreeWidgetItem *catCompetition = addCategory(tr("External Competition"));
-    addSubItem(catCompetition, tr("All Competitions"), "table", "all_competitions");
-    addSubItem(catCompetition, tr("New / Edit Competitions"), "form", "form_competitions");
-    addSubItem(catCompetition, tr("Competition Teams"), "table", "competition_teams");
-    addSubItem(catCompetition, tr("New / Edit Competition Team Assignments"), "form", "form_competition_assignments");
+    addSubItem(catCompetition, tr("All Competitions"),                         "table", "all_competitions");
+    addSubItem(catCompetition, tr("New / Edit Competitions"),                  "form",  "form_competitions");
+    addSubItem(catCompetition, tr("Competition Teams"),                        "table", "competition_teams");
+    addSubItem(catCompetition, tr("New / Edit Competition Team Assignments"),  "form",  "form_competition_assignments");
 
     connect(m_navTree, &QTreeWidget::itemClicked, this, &MainWindow::onNavigationItemClicked);
 }
@@ -248,48 +234,86 @@ void MainWindow::setupWorkspace()
 {
     m_workspace = new QStackedWidget(this);
 
-    // Page 0: All Members View
+    // Members
     m_allMembersView = new MembersTableView(MembersFilter::All, m_workspace);
-    connect(m_allMembersView, &MembersTableView::newMemberRequested, this, &MainWindow::showNewMemberForm);
+    connect(m_allMembersView, &MembersTableView::newMemberRequested,  this, &MainWindow::showNewMemberForm);
     connect(m_allMembersView, &MembersTableView::editMemberRequested, this, &MainWindow::showEditMemberForm);
     m_workspace->addWidget(m_allMembersView);
 
-    // Page 1: Active Members View
     m_activeMembersView = new MembersTableView(MembersFilter::ActiveOnly, m_workspace);
-    connect(m_activeMembersView, &MembersTableView::newMemberRequested, this, &MainWindow::showNewMemberForm);
+    connect(m_activeMembersView, &MembersTableView::newMemberRequested,  this, &MainWindow::showNewMemberForm);
     connect(m_activeMembersView, &MembersTableView::editMemberRequested, this, &MainWindow::showEditMemberForm);
     m_workspace->addWidget(m_activeMembersView);
 
-    // Page 2: Member Form View (New / Edit)
     m_memberFormView = new MemberFormView(m_workspace);
-    connect(m_memberFormView, &MemberFormView::memberSaved, this, &MainWindow::onMemberSaved);
-    connect(m_memberFormView, &MemberFormView::memberDeleted, this, &MainWindow::onMemberDeleted);
-    connect(m_memberFormView, &MemberFormView::cancelRequested, this, &MainWindow::showAllMembersView);
+    connect(m_memberFormView, &MemberFormView::memberSaved,    this, &MainWindow::onMemberSaved);
+    connect(m_memberFormView, &MemberFormView::memberDeleted,  this, &MainWindow::onMemberDeleted);
+    connect(m_memberFormView, &MemberFormView::cancelRequested,this, &MainWindow::showAllMembersView);
     m_workspace->addWidget(m_memberFormView);
 
-    // Page 3: Query Result View
+    // Meetings — AGM
+    m_agmView = new MeetingsTableView("AGM", m_workspace);
+    connect(m_agmView, &MeetingsTableView::newMeetingRequested,  this, &MainWindow::showNewMeetingForm);
+    connect(m_agmView, &MeetingsTableView::editMeetingRequested, this, &MainWindow::showEditMeetingForm);
+    m_workspace->addWidget(m_agmView);
+
+    // Meetings — EGM
+    m_egmView = new MeetingsTableView("EGM", m_workspace);
+    connect(m_egmView, &MeetingsTableView::newMeetingRequested,  this, &MainWindow::showNewMeetingForm);
+    connect(m_egmView, &MeetingsTableView::editMeetingRequested, this, &MainWindow::showEditMeetingForm);
+    m_workspace->addWidget(m_egmView);
+
+    // Meetings — ECM
+    m_ecmView = new MeetingsTableView("ECM", m_workspace);
+    connect(m_ecmView, &MeetingsTableView::newMeetingRequested,  this, &MainWindow::showNewMeetingForm);
+    connect(m_ecmView, &MeetingsTableView::editMeetingRequested, this, &MainWindow::showEditMeetingForm);
+    m_workspace->addWidget(m_ecmView);
+
+    // Attendees
+    m_attendeesView = new AttendeesTableView(m_workspace);
+    connect(m_attendeesView, &AttendeesTableView::openRegisterRequested,
+            this, &MainWindow::showAttendanceRegisterForm);
+    m_workspace->addWidget(m_attendeesView);
+
+    // Meeting form
+    m_meetingFormView = new MeetingFormView(m_workspace);
+    connect(m_meetingFormView, &MeetingFormView::meetingSaved,    this, &MainWindow::onMeetingSaved);
+    connect(m_meetingFormView, &MeetingFormView::meetingDeleted,  this, &MainWindow::onMeetingDeleted);
+    connect(m_meetingFormView, &MeetingFormView::cancelRequested, this, &MainWindow::showAgmView);
+    m_workspace->addWidget(m_meetingFormView);
+
+    // Attendance register
+    m_attendanceRegisterView = new AttendanceRegisterView(m_workspace);
+    connect(m_attendanceRegisterView, &AttendanceRegisterView::attendanceChanged,
+            this, &MainWindow::onAttendanceChanged);
+    connect(m_attendanceRegisterView, &AttendanceRegisterView::cancelRequested,
+            this, &MainWindow::showAttendeesView);
+    m_workspace->addWidget(m_attendanceRegisterView);
+
+    // Query result
     m_queryResultView = new QueryResultView(m_workspace);
     m_workspace->addWidget(m_queryResultView);
 
-    // Page 4: Placeholder View
+    // Placeholder
     m_placeholderView = new PlaceholderView(tr("Placeholder"), tr("View"), tr("Details"), m_workspace);
     m_workspace->addWidget(m_placeholderView);
 
-    // Page 5: Raw Table View
+    // Raw table
     m_rawTableView = new RawTableView("members", m_workspace);
     m_workspace->addWidget(m_rawTableView);
 }
 
 void MainWindow::setupShortcuts()
 {
-    // Ctrl+F -> Search within currently displayed table
     QShortcut *searchShortcut = new QShortcut(QKeySequence::Find, this);
     connect(searchShortcut, &QShortcut::activated, this, [this]() {
-        if (m_workspace->currentWidget() == m_allMembersView) {
-            m_allMembersView->focusSearch();
-        } else if (m_workspace->currentWidget() == m_activeMembersView) {
-            m_activeMembersView->focusSearch();
-        }
+        QWidget *cur = m_workspace->currentWidget();
+        if (cur == m_allMembersView)           m_allMembersView->focusSearch();
+        else if (cur == m_activeMembersView)   m_activeMembersView->focusSearch();
+        else if (cur == m_agmView)             m_agmView->focusSearch();
+        else if (cur == m_egmView)             m_egmView->focusSearch();
+        else if (cur == m_ecmView)             m_ecmView->focusSearch();
+        else if (cur == m_attendeesView)       m_attendeesView->focusSearch();
     });
 }
 
@@ -320,7 +344,8 @@ bool MainWindow::initializeDatabase()
     if (opened) {
         updateWindowTitle();
         showAllMembersView();
-        statusBar()->showMessage(tr("Connected to database: %1").arg(DatabaseManager::instance().databasePath()), 5000);
+        statusBar()->showMessage(
+            tr("Connected to database: %1").arg(DatabaseManager::instance().databasePath()), 5000);
         return true;
     }
 
@@ -329,63 +354,134 @@ bool MainWindow::initializeDatabase()
 
 bool MainWindow::preparePageSwitch()
 {
-    if (m_workspace->currentWidget() == m_memberFormView) {
-        if (!m_memberFormView->maybeConfirmDiscard()) {
-            return false;
-        }
+    QWidget *cur = m_workspace->currentWidget();
+    if (cur == m_memberFormView) {
+        if (!m_memberFormView->maybeConfirmDiscard()) return false;
+    } else if (cur == m_meetingFormView) {
+        if (!m_meetingFormView->maybeConfirmDiscard()) return false;
+    } else if (cur == m_attendanceRegisterView) {
+        if (!m_attendanceRegisterView->maybeConfirmDiscard()) return false;
     }
     return true;
 }
 
+// ──────────────────────────────────────────────────────────
+// Members navigation
+// ──────────────────────────────────────────────────────────
+
 void MainWindow::showAllMembersView()
 {
     if (!preparePageSwitch()) return;
-
     m_workspace->setCurrentWidget(m_allMembersView);
     m_allMembersView->refresh();
-    if (m_allMembersItem) {
-        m_navTree->setCurrentItem(m_allMembersItem);
-    }
+    if (m_allMembersItem) m_navTree->setCurrentItem(m_allMembersItem);
 }
 
 void MainWindow::showActiveMembersView()
 {
     if (!preparePageSwitch()) return;
-
     m_workspace->setCurrentWidget(m_activeMembersView);
     m_activeMembersView->refresh();
-    if (m_activeMembersItem) {
-        m_navTree->setCurrentItem(m_activeMembersItem);
-    }
+    if (m_activeMembersItem) m_navTree->setCurrentItem(m_activeMembersItem);
 }
 
 void MainWindow::showNewMemberForm()
 {
     if (!preparePageSwitch()) return;
-
     m_memberFormView->setCreateMode();
     m_workspace->setCurrentWidget(m_memberFormView);
-    if (m_newMemberItem) {
-        m_navTree->setCurrentItem(m_newMemberItem);
-    }
+    if (m_newMemberItem) m_navTree->setCurrentItem(m_newMemberItem);
 }
 
 void MainWindow::showEditMemberForm(int memberId)
 {
     if (!preparePageSwitch()) return;
-
     if (m_memberFormView->loadMember(memberId)) {
         m_workspace->setCurrentWidget(m_memberFormView);
-        if (m_newMemberItem) {
-            m_navTree->setCurrentItem(m_newMemberItem);
-        }
+        if (m_newMemberItem) m_navTree->setCurrentItem(m_newMemberItem);
     }
+}
+
+// ──────────────────────────────────────────────────────────
+// Meetings navigation
+// ──────────────────────────────────────────────────────────
+
+void MainWindow::showAgmView()
+{
+    if (!preparePageSwitch()) return;
+    m_workspace->setCurrentWidget(m_agmView);
+    m_agmView->refresh();
+    if (m_agmItem) m_navTree->setCurrentItem(m_agmItem);
+}
+
+void MainWindow::showEgmView()
+{
+    if (!preparePageSwitch()) return;
+    m_workspace->setCurrentWidget(m_egmView);
+    m_egmView->refresh();
+    if (m_egmItem) m_navTree->setCurrentItem(m_egmItem);
+}
+
+void MainWindow::showEcmView()
+{
+    if (!preparePageSwitch()) return;
+    m_workspace->setCurrentWidget(m_ecmView);
+    m_ecmView->refresh();
+    if (m_ecmItem) m_navTree->setCurrentItem(m_ecmItem);
+}
+
+void MainWindow::showAttendeesView()
+{
+    if (!preparePageSwitch()) return;
+    m_workspace->setCurrentWidget(m_attendeesView);
+    m_attendeesView->refresh();
+    if (m_attendeesItem) m_navTree->setCurrentItem(m_attendeesItem);
+}
+
+void MainWindow::showNewMeetingForm(const QString &defaultType)
+{
+    if (!preparePageSwitch()) return;
+    m_meetingFormView->setCreateMode(defaultType.isEmpty() ? "AGM" : defaultType);
+    m_workspace->setCurrentWidget(m_meetingFormView);
+    if (m_newMeetingItem) m_navTree->setCurrentItem(m_newMeetingItem);
+}
+
+void MainWindow::showEditMeetingForm(int meetingId)
+{
+    if (!preparePageSwitch()) return;
+    if (m_meetingFormView->loadMeeting(meetingId)) {
+        m_workspace->setCurrentWidget(m_meetingFormView);
+        if (m_newMeetingItem) m_navTree->setCurrentItem(m_newMeetingItem);
+    }
+}
+
+void MainWindow::showAttendanceRegisterForm(int meetingId)
+{
+    if (!preparePageSwitch()) return;
+    // Reload meeting list
+    m_attendanceRegisterView->loadMeetings();
+    if (meetingId > 0) {
+        m_attendanceRegisterView->selectMeeting(meetingId);
+    }
+    m_workspace->setCurrentWidget(m_attendanceRegisterView);
+    if (m_attendanceRegisterItem) m_navTree->setCurrentItem(m_attendanceRegisterItem);
+}
+
+// ──────────────────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────────────────
+
+void MainWindow::refreshMeetingTables()
+{
+    m_agmView->refresh();
+    m_egmView->refresh();
+    m_ecmView->refresh();
+    m_attendeesView->refresh();
 }
 
 void MainWindow::showPlaceholder(const QString &title, const QString &type, const QString &description)
 {
     if (!preparePageSwitch()) return;
-
     m_placeholderView->updateDetails(title, type, description);
     m_workspace->setCurrentWidget(m_placeholderView);
 }
@@ -393,7 +489,6 @@ void MainWindow::showPlaceholder(const QString &title, const QString &type, cons
 void MainWindow::showRawTable(const QString &tableName)
 {
     if (!preparePageSwitch()) return;
-
     m_rawTableView->loadTable(tableName);
     m_workspace->setCurrentWidget(m_rawTableView);
     m_navTree->clearSelection();
@@ -410,26 +505,36 @@ void MainWindow::updateWindowTitle()
     }
 }
 
+// ──────────────────────────────────────────────────────────
+// Navigation handler
+// ──────────────────────────────────────────────────────────
+
 void MainWindow::onNavigationItemClicked(QTreeWidgetItem *item, int /*column*/)
 {
     if (!item) return;
-
     QString typeKey = item->data(0, Qt::UserRole).toString();
-    QString idKey = item->data(0, Qt::UserRole + 1).toString();
+    QString idKey   = item->data(0, Qt::UserRole + 1).toString();
 
     if (idKey.isEmpty()) {
-        // Category header clicked, toggle expand/collapse
         item->setExpanded(!item->isExpanded());
         return;
     }
 
-    if (idKey == "all_members") {
-        showAllMembersView();
-    } else if (idKey == "active_members") {
-        showActiveMembersView();
-    } else if (idKey == "form_member") {
-        showNewMemberForm();
-    } else {
+    // Members
+    if      (idKey == "all_members")    showAllMembersView();
+    else if (idKey == "active_members") showActiveMembersView();
+    else if (idKey == "form_member")    showNewMemberForm();
+
+    // Meetings
+    else if (idKey == "agm")             showAgmView();
+    else if (idKey == "egm")             showEgmView();
+    else if (idKey == "ecm")             showEcmView();
+    else if (idKey == "attendees")       showAttendeesView();
+    else if (idKey == "form_meeting")    showNewMeetingForm();
+    else if (idKey == "form_attendance") showAttendanceRegisterForm();
+
+    // Not-yet-implemented items → placeholder
+    else {
         QString typeLabel = (typeKey == "form") ? tr("Form") : tr("Table View");
         QString desc = tr("The '%1' %2 will be implemented in a subsequent milestone as defined in design.md.")
                            .arg(item->text(0), typeLabel.toLower());
@@ -437,10 +542,13 @@ void MainWindow::onNavigationItemClicked(QTreeWidgetItem *item, int /*column*/)
     }
 }
 
+// ──────────────────────────────────────────────────────────
+// Slots
+// ──────────────────────────────────────────────────────────
+
 void MainWindow::onOpenSwitchDatabase()
 {
     if (!preparePageSwitch()) return;
-
     DatabaseSelectionDialog dlg(this);
     if (dlg.exec() == QDialog::Accepted) {
         QString path = dlg.selectedPath();
@@ -448,7 +556,6 @@ void MainWindow::onOpenSwitchDatabase()
             QSettings settings("MSMS", "MSMSManager");
             settings.setValue("lastDatabasePath", path);
             updateWindowTitle();
-            // Section 8.1 & 14: Once opened, application lands on All Members every time
             showAllMembersView();
             statusBar()->showMessage(tr("Switched to database: %1").arg(path), 5000);
         }
@@ -457,22 +564,27 @@ void MainWindow::onOpenSwitchDatabase()
 
 void MainWindow::onRefreshCurrentView()
 {
-    if (m_workspace->currentWidget() == m_allMembersView) {
-        m_allMembersView->refresh();
-        statusBar()->showMessage(tr("All Members view refreshed."), 3000);
-    } else if (m_workspace->currentWidget() == m_activeMembersView) {
-        m_activeMembersView->refresh();
-        statusBar()->showMessage(tr("Active Members view refreshed."), 3000);
-    } else if (m_workspace->currentWidget() == m_rawTableView) {
-        m_rawTableView->refresh();
-        statusBar()->showMessage(tr("Raw table refreshed."), 3000);
-    } else if (m_workspace->currentWidget() == m_memberFormView) {
+    QWidget *cur = m_workspace->currentWidget();
+    if (cur == m_allMembersView)         { m_allMembersView->refresh(); statusBar()->showMessage(tr("All Members view refreshed."), 3000); }
+    else if (cur == m_activeMembersView) { m_activeMembersView->refresh(); statusBar()->showMessage(tr("Active Members view refreshed."), 3000); }
+    else if (cur == m_rawTableView)      { m_rawTableView->refresh(); statusBar()->showMessage(tr("Raw table refreshed."), 3000); }
+    else if (cur == m_agmView)           { m_agmView->refresh(); statusBar()->showMessage(tr("AGM table refreshed."), 3000); }
+    else if (cur == m_egmView)           { m_egmView->refresh(); statusBar()->showMessage(tr("EGM table refreshed."), 3000); }
+    else if (cur == m_ecmView)           { m_ecmView->refresh(); statusBar()->showMessage(tr("ECM table refreshed."), 3000); }
+    else if (cur == m_attendeesView)     { m_attendeesView->refresh(); statusBar()->showMessage(tr("Attendees view refreshed."), 3000); }
+    else if (cur == m_memberFormView) {
         if (m_memberFormView->maybeConfirmDiscard()) {
-            if (m_memberFormView->currentMemberId() > 0) {
+            if (m_memberFormView->currentMemberId() > 0)
                 m_memberFormView->loadMember(m_memberFormView->currentMemberId());
-            } else {
+            else
                 m_memberFormView->setCreateMode();
-            }
+        }
+    } else if (cur == m_meetingFormView) {
+        if (m_meetingFormView->maybeConfirmDiscard()) {
+            if (m_meetingFormView->currentMeetingId() > 0)
+                m_meetingFormView->loadMeeting(m_meetingFormView->currentMeetingId());
+            else
+                m_meetingFormView->setCreateMode();
         }
     }
 }
@@ -481,19 +593,12 @@ void MainWindow::onVerifyIntegrity()
 {
     QString result;
     bool ok = DatabaseManager::instance().verifyIntegrity(&result);
-
     if (ok) {
-        QMessageBox::information(
-            this,
-            tr("Database Integrity Check"),
-            tr("Database integrity check PASSED.\n\nResult:\n%1").arg(result)
-        );
+        QMessageBox::information(this, tr("Database Integrity Check"),
+            tr("Database integrity check PASSED.\n\nResult:\n%1").arg(result));
     } else {
-        QMessageBox::critical(
-            this,
-            tr("Database Integrity Check"),
-            tr("Database integrity check FAILED.\n\nResult:\n%1").arg(result)
-        );
+        QMessageBox::critical(this, tr("Database Integrity Check"),
+            tr("Database integrity check FAILED.\n\nResult:\n%1").arg(result));
     }
 }
 
@@ -509,32 +614,22 @@ void MainWindow::onExecuteQuery(const QString &sql)
 
     if (safety == DatabaseManager::StatementSafety::NeedsDeleteWarning) {
         QMessageBox::StandardButton reply = QMessageBox::warning(
-            this,
-            tr("Confirm DELETE Operation"),
-            tr("You are about to execute a DELETE statement:\n\n%1\n\nAre you sure you wish to permanently delete matching records?").arg(sql),
-            QMessageBox::Yes | QMessageBox::No,
-            QMessageBox::No
-        );
-        if (reply != QMessageBox::Yes) {
-            return;
-        }
+            this, tr("Confirm DELETE Operation"),
+            tr("You are about to execute a DELETE statement:\n\n%1\n\nAre you sure?").arg(sql),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (reply != QMessageBox::Yes) return;
     } else if (safety == DatabaseManager::StatementSafety::NeedsUpdateWithoutWhereWarning) {
         QMessageBox::StandardButton reply = QMessageBox::warning(
-            this,
-            tr("Warning: Unconstrained UPDATE"),
-            tr("Warning: The following UPDATE statement has NO WHERE clause:\n\n%1\n\nThis will modify EVERY record in the table. Are you sure you wish to proceed?").arg(sql),
-            QMessageBox::Yes | QMessageBox::No,
-            QMessageBox::No
-        );
-        if (reply != QMessageBox::Yes) {
-            return;
-        }
+            this, tr("Warning: Unconstrained UPDATE"),
+            tr("Warning: No WHERE clause:\n\n%1\n\nThis modifies EVERY row. Proceed?").arg(sql),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (reply != QMessageBox::Yes) return;
     } else if (safety == DatabaseManager::StatementSafety::ProhibitedSchemaModification) {
-        m_queryResultView->displayError(sql, tr("Schema-modifying statements (CREATE, ALTER, DROP, VACUUM, etc.) are strictly prohibited in the query console."));
+        m_queryResultView->displayError(sql, tr("Schema-modifying statements are prohibited."));
         m_workspace->setCurrentWidget(m_queryResultView);
         return;
     } else if (safety == DatabaseManager::StatementSafety::MultipleStatementsProhibited) {
-        m_queryResultView->displayError(sql, tr("Only one SQL statement may be executed at a time. Multi-statement scripts are prohibited."));
+        m_queryResultView->displayError(sql, tr("Only one SQL statement may be executed at a time."));
         m_workspace->setCurrentWidget(m_queryResultView);
         return;
     }
@@ -547,24 +642,21 @@ void MainWindow::onExecuteQuery(const QString &sql)
                     trimmed.startsWith("EXPLAIN", Qt::CaseInsensitive);
 
     if (isSelect) {
-        if (!m_queryModel) {
-            m_queryModel = new QSqlQueryModel(this);
-        }
+        if (!m_queryModel) m_queryModel = new QSqlQueryModel(this);
         m_queryModel->setQuery(sql, DatabaseManager::instance().database());
-        if (m_queryModel->lastError().isValid()) {
+        if (m_queryModel->lastError().isValid())
             m_queryResultView->displayError(sql, m_queryModel->lastError().databaseText());
-        } else {
+        else
             m_queryResultView->displaySelectResult(m_queryModel, sql, m_queryModel->rowCount());
-        }
     } else {
         QSqlQuery q(DatabaseManager::instance().database());
         QString err;
         if (DatabaseManager::instance().executeControlledQuery(sql, q, &err)) {
             int affected = q.numRowsAffected();
             m_queryResultView->displayModificationResult(sql, affected);
-            // Refresh tables after modification
             m_allMembersView->refresh();
             m_activeMembersView->refresh();
+            refreshMeetingTables();
         } else {
             m_queryResultView->displayError(sql, err);
         }
@@ -581,10 +673,12 @@ void MainWindow::onRawTableTriggered(const QString &tableName)
 
 void MainWindow::onFormTriggered(const QString &formName)
 {
-    if (formName == "New / Edit Member") {
-        showNewMemberForm();
-    } else {
-        showPlaceholder(formName, tr("Form"), tr("Direct form launcher for '%1' is scheduled for Milestone 3+.").arg(formName));
+    if (formName == "New / Edit Member")       showNewMemberForm();
+    else if (formName == "New / Edit Meeting") showNewMeetingForm();
+    else if (formName == "Attendance Register")showAttendanceRegisterForm();
+    else {
+        showPlaceholder(formName, tr("Form"),
+            tr("Direct form launcher for '%1' is scheduled for a future milestone.").arg(formName));
         m_navTree->clearSelection();
     }
 }
@@ -592,15 +686,18 @@ void MainWindow::onFormTriggered(const QString &formName)
 void MainWindow::onAbout()
 {
     QMessageBox::about(
-        this,
-        tr("About MSMS HQ"),
+        this, tr("About MSMS HQ"),
         tr("<h3>MSMS HQ</h3>"
-           "<p><b>Version 1.0.0 (Milestone 2)</b></p>"
+           "<p><b>Version 1.0.0 (Milestone 3)</b></p>"
            "<p>Offline desktop application for managing MSMS membership and society records.</p>"
            "<p>Built with C++17, Qt 6 Widgets &amp; SQL, and SQLite.</p>"
            "<p>Native platform look with restrained customisation.</p>")
     );
 }
+
+// ──────────────────────────────────────────────────────────
+// Signal handlers
+// ──────────────────────────────────────────────────────────
 
 void MainWindow::onMemberSaved(int memberId)
 {
@@ -615,6 +712,25 @@ void MainWindow::onMemberDeleted(int memberId)
     m_activeMembersView->refresh();
     showAllMembersView();
     statusBar()->showMessage(tr("Member ID %1 deleted.").arg(memberId), 5000);
+}
+
+void MainWindow::onMeetingSaved(int meetingId)
+{
+    refreshMeetingTables();
+    statusBar()->showMessage(tr("Meeting ID %1 saved successfully.").arg(meetingId), 5000);
+}
+
+void MainWindow::onMeetingDeleted(int meetingId)
+{
+    refreshMeetingTables();
+    showAgmView();
+    statusBar()->showMessage(tr("Meeting ID %1 deleted.").arg(meetingId), 5000);
+}
+
+void MainWindow::onAttendanceChanged(int meetingId)
+{
+    m_attendeesView->refresh();
+    statusBar()->showMessage(tr("Attendance register for meeting ID %1 updated.").arg(meetingId), 5000);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
