@@ -7,7 +7,8 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
-    app.setApplicationName("MSMSManager");
+    app.setApplicationName("MSMS HQ");
+    app.setApplicationDisplayName("MSMS HQ");
     app.setApplicationVersion("1.0.0");
     app.setOrganizationName("MSMS");
     app.setOrganizationDomain("msms.org");

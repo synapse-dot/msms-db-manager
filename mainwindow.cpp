@@ -403,10 +403,10 @@ void MainWindow::updateWindowTitle()
 {
     QString path = DatabaseManager::instance().databasePath();
     if (path.isEmpty()) {
-        setWindowTitle(tr("MSMS Manager — No Database Connected"));
+        setWindowTitle(tr("MSMS HQ — No Database Connected"));
     } else {
         QFileInfo fi(path);
-        setWindowTitle(tr("MSMS Manager — %1 [%2]").arg(fi.fileName(), fi.absolutePath()));
+        setWindowTitle(tr("MSMS HQ — %1 [%2]").arg(fi.fileName(), fi.absolutePath()));
     }
 }
 
@@ -593,8 +593,8 @@ void MainWindow::onAbout()
 {
     QMessageBox::about(
         this,
-        tr("About MSMS Manager"),
-        tr("<h3>MSMS Manager</h3>"
+        tr("About MSMS HQ"),
+        tr("<h3>MSMS HQ</h3>"
            "<p><b>Version 1.0.0 (Milestone 2)</b></p>"
            "<p>Offline desktop application for managing MSMS membership and society records.</p>"
            "<p>Built with C++17, Qt 6 Widgets &amp; SQL, and SQLite.</p>"
