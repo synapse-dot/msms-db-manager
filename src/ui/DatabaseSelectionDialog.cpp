@@ -26,7 +26,7 @@ DatabaseSelectionDialog::DatabaseSelectionDialog(QWidget *parent)
     // Title / Header
     QLabel *titleLabel = new QLabel(tr("MSMS Manager"), this);
     titleLabel->setProperty("heading", true);
-    titleLabel->setStyleSheet("font-size: 18px; font-weight: bold; color: #89b4fa;");
+    titleLabel->setStyleSheet("font-size: 18px; font-weight: bold;");
     mainLayout->addWidget(titleLabel);
 
     QLabel *descLabel = new QLabel(

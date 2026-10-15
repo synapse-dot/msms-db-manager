@@ -1,7 +1,8 @@
 #include "mainwindow.h"
 #include "database/DatabaseManager.h"
 #include "ui/DatabaseSelectionDialog.h"
-#include "ui/AllMembersView.h"
+#include "ui/MembersTableView.h"
+#include "ui/MemberFormView.h"
 #include "ui/QueryConsoleView.h"
 #include "ui/PlaceholderView.h"
 #include "ui/RawTableView.h"
@@ -88,15 +89,15 @@ void MainWindow::setupMenuBar()
     QMenu *fileMenu = mBar->addMenu(tr("&File"));
 
     QAction *actExportSql = fileMenu->addAction(tr("Export Database (.sql)"));
-    actExportSql->setEnabled(false); // Milestone 2/later
+    actExportSql->setEnabled(false); // Future milestone
     actExportSql->setToolTip(tr("Feature scheduled for a future milestone."));
 
     QAction *actBackup = fileMenu->addAction(tr("Save Database Backup..."));
-    actBackup->setEnabled(false); // Milestone 2/later
+    actBackup->setEnabled(false); // Future milestone
     actBackup->setToolTip(tr("Feature scheduled for a future milestone."));
 
     QAction *actRestore = fileMenu->addAction(tr("Restore Database Backup..."));
-    actRestore->setEnabled(false); // Milestone 2/later
+    actRestore->setEnabled(false); // Future milestone
     actRestore->setToolTip(tr("Feature scheduled for a future milestone."));
 
     fileMenu->addSeparator();
@@ -186,7 +187,6 @@ void MainWindow::setupNavigationTree()
         QFont f = cat->font(0);
         f.setBold(true);
         cat->setFont(0, f);
-        cat->setForeground(0, QColor("#89b4fa"));
         cat->setExpanded(true);
         return cat;
     };
@@ -202,8 +202,8 @@ void MainWindow::setupNavigationTree()
     // 3.1 Members
     QTreeWidgetItem *catMembers = addCategory(tr("Members"));
     m_allMembersItem = addSubItem(catMembers, tr("All Members"), "table", "all_members");
-    addSubItem(catMembers, tr("Active Members"), "table", "active_members");
-    addSubItem(catMembers, tr("New / Edit Member"), "form", "form_member");
+    m_activeMembersItem = addSubItem(catMembers, tr("Active Members"), "table", "active_members");
+    m_newMemberItem = addSubItem(catMembers, tr("New / Edit Member"), "form", "form_member");
 
     // 3.2 Meetings
     QTreeWidgetItem *catMeetings = addCategory(tr("Meetings"));
@@ -249,18 +249,33 @@ void MainWindow::setupWorkspace()
     m_workspace = new QStackedWidget(this);
 
     // Page 0: All Members View
-    m_allMembersView = new AllMembersView(m_workspace);
+    m_allMembersView = new MembersTableView(MembersFilter::All, m_workspace);
+    connect(m_allMembersView, &MembersTableView::newMemberRequested, this, &MainWindow::showNewMemberForm);
+    connect(m_allMembersView, &MembersTableView::editMemberRequested, this, &MainWindow::showEditMemberForm);
     m_workspace->addWidget(m_allMembersView);
 
-    // Page 1: Query Result View
+    // Page 1: Active Members View
+    m_activeMembersView = new MembersTableView(MembersFilter::ActiveOnly, m_workspace);
+    connect(m_activeMembersView, &MembersTableView::newMemberRequested, this, &MainWindow::showNewMemberForm);
+    connect(m_activeMembersView, &MembersTableView::editMemberRequested, this, &MainWindow::showEditMemberForm);
+    m_workspace->addWidget(m_activeMembersView);
+
+    // Page 2: Member Form View (New / Edit)
+    m_memberFormView = new MemberFormView(m_workspace);
+    connect(m_memberFormView, &MemberFormView::memberSaved, this, &MainWindow::onMemberSaved);
+    connect(m_memberFormView, &MemberFormView::memberDeleted, this, &MainWindow::onMemberDeleted);
+    connect(m_memberFormView, &MemberFormView::cancelRequested, this, &MainWindow::showAllMembersView);
+    m_workspace->addWidget(m_memberFormView);
+
+    // Page 3: Query Result View
     m_queryResultView = new QueryResultView(m_workspace);
     m_workspace->addWidget(m_queryResultView);
 
-    // Page 2: Placeholder View
+    // Page 4: Placeholder View
     m_placeholderView = new PlaceholderView(tr("Placeholder"), tr("View"), tr("Details"), m_workspace);
     m_workspace->addWidget(m_placeholderView);
 
-    // Page 3: Raw Table View
+    // Page 5: Raw Table View
     m_rawTableView = new RawTableView("members", m_workspace);
     m_workspace->addWidget(m_rawTableView);
 }
@@ -272,6 +287,8 @@ void MainWindow::setupShortcuts()
     connect(searchShortcut, &QShortcut::activated, this, [this]() {
         if (m_workspace->currentWidget() == m_allMembersView) {
             m_allMembersView->focusSearch();
+        } else if (m_workspace->currentWidget() == m_activeMembersView) {
+            m_activeMembersView->focusSearch();
         }
     });
 }
@@ -310,8 +327,20 @@ bool MainWindow::initializeDatabase()
     return false;
 }
 
+bool MainWindow::preparePageSwitch()
+{
+    if (m_workspace->currentWidget() == m_memberFormView) {
+        if (!m_memberFormView->maybeConfirmDiscard()) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void MainWindow::showAllMembersView()
 {
+    if (!preparePageSwitch()) return;
+
     m_workspace->setCurrentWidget(m_allMembersView);
     m_allMembersView->refresh();
     if (m_allMembersItem) {
@@ -319,14 +348,52 @@ void MainWindow::showAllMembersView()
     }
 }
 
+void MainWindow::showActiveMembersView()
+{
+    if (!preparePageSwitch()) return;
+
+    m_workspace->setCurrentWidget(m_activeMembersView);
+    m_activeMembersView->refresh();
+    if (m_activeMembersItem) {
+        m_navTree->setCurrentItem(m_activeMembersItem);
+    }
+}
+
+void MainWindow::showNewMemberForm()
+{
+    if (!preparePageSwitch()) return;
+
+    m_memberFormView->setCreateMode();
+    m_workspace->setCurrentWidget(m_memberFormView);
+    if (m_newMemberItem) {
+        m_navTree->setCurrentItem(m_newMemberItem);
+    }
+}
+
+void MainWindow::showEditMemberForm(int memberId)
+{
+    if (!preparePageSwitch()) return;
+
+    if (m_memberFormView->loadMember(memberId)) {
+        m_workspace->setCurrentWidget(m_memberFormView);
+        if (m_newMemberItem) {
+            m_navTree->setCurrentItem(m_newMemberItem);
+        }
+    }
+}
+
 void MainWindow::showPlaceholder(const QString &title, const QString &type, const QString &description)
 {
+    if (!preparePageSwitch()) return;
+
     m_placeholderView->updateDetails(title, type, description);
     m_workspace->setCurrentWidget(m_placeholderView);
 }
 
 void MainWindow::showRawTable(const QString &tableName)
 {
+    if (!preparePageSwitch()) return;
+
     m_rawTableView->loadTable(tableName);
     m_workspace->setCurrentWidget(m_rawTableView);
     m_navTree->clearSelection();
@@ -358,6 +425,10 @@ void MainWindow::onNavigationItemClicked(QTreeWidgetItem *item, int /*column*/)
 
     if (idKey == "all_members") {
         showAllMembersView();
+    } else if (idKey == "active_members") {
+        showActiveMembersView();
+    } else if (idKey == "form_member") {
+        showNewMemberForm();
     } else {
         QString typeLabel = (typeKey == "form") ? tr("Form") : tr("Table View");
         QString desc = tr("The '%1' %2 will be implemented in a subsequent milestone as defined in design.md.")
@@ -368,6 +439,8 @@ void MainWindow::onNavigationItemClicked(QTreeWidgetItem *item, int /*column*/)
 
 void MainWindow::onOpenSwitchDatabase()
 {
+    if (!preparePageSwitch()) return;
+
     DatabaseSelectionDialog dlg(this);
     if (dlg.exec() == QDialog::Accepted) {
         QString path = dlg.selectedPath();
@@ -387,9 +460,20 @@ void MainWindow::onRefreshCurrentView()
     if (m_workspace->currentWidget() == m_allMembersView) {
         m_allMembersView->refresh();
         statusBar()->showMessage(tr("All Members view refreshed."), 3000);
+    } else if (m_workspace->currentWidget() == m_activeMembersView) {
+        m_activeMembersView->refresh();
+        statusBar()->showMessage(tr("Active Members view refreshed."), 3000);
     } else if (m_workspace->currentWidget() == m_rawTableView) {
         m_rawTableView->refresh();
         statusBar()->showMessage(tr("Raw table refreshed."), 3000);
+    } else if (m_workspace->currentWidget() == m_memberFormView) {
+        if (m_memberFormView->maybeConfirmDiscard()) {
+            if (m_memberFormView->currentMemberId() > 0) {
+                m_memberFormView->loadMember(m_memberFormView->currentMemberId());
+            } else {
+                m_memberFormView->setCreateMode();
+            }
+        }
     }
 }
 
@@ -455,6 +539,8 @@ void MainWindow::onExecuteQuery(const QString &sql)
         return;
     }
 
+    if (!preparePageSwitch()) return;
+
     QString trimmed = sql.trimmed();
     bool isSelect = trimmed.startsWith("SELECT", Qt::CaseInsensitive) ||
                     trimmed.startsWith("PRAGMA", Qt::CaseInsensitive) ||
@@ -476,8 +562,9 @@ void MainWindow::onExecuteQuery(const QString &sql)
         if (DatabaseManager::instance().executeControlledQuery(sql, q, &err)) {
             int affected = q.numRowsAffected();
             m_queryResultView->displayModificationResult(sql, affected);
-            // Refresh All Members if modified
+            // Refresh tables after modification
             m_allMembersView->refresh();
+            m_activeMembersView->refresh();
         } else {
             m_queryResultView->displayError(sql, err);
         }
@@ -494,8 +581,12 @@ void MainWindow::onRawTableTriggered(const QString &tableName)
 
 void MainWindow::onFormTriggered(const QString &formName)
 {
-    showPlaceholder(formName, tr("Form"), tr("Direct form launcher for '%1' is scheduled for Milestone 2.").arg(formName));
-    m_navTree->clearSelection();
+    if (formName == "New / Edit Member") {
+        showNewMemberForm();
+    } else {
+        showPlaceholder(formName, tr("Form"), tr("Direct form launcher for '%1' is scheduled for Milestone 3+.").arg(formName));
+        m_navTree->clearSelection();
+    }
 }
 
 void MainWindow::onAbout()
@@ -504,16 +595,34 @@ void MainWindow::onAbout()
         this,
         tr("About MSMS Manager"),
         tr("<h3>MSMS Manager</h3>"
-           "<p><b>Version 1.0.0 (Milestone 1)</b></p>"
+           "<p><b>Version 1.0.0 (Milestone 2)</b></p>"
            "<p>Offline desktop application for managing MSMS membership and society records.</p>"
            "<p>Built with C++17, Qt 6 Widgets &amp; SQL, and SQLite.</p>"
-           "<p>Themed with Catppuccin Mocha.</p>")
+           "<p>Native platform look with restrained customisation.</p>")
     );
+}
+
+void MainWindow::onMemberSaved(int memberId)
+{
+    m_allMembersView->refresh();
+    m_activeMembersView->refresh();
+    statusBar()->showMessage(tr("Member ID %1 saved successfully.").arg(memberId), 5000);
+}
+
+void MainWindow::onMemberDeleted(int memberId)
+{
+    m_allMembersView->refresh();
+    m_activeMembersView->refresh();
+    showAllMembersView();
+    statusBar()->showMessage(tr("Member ID %1 deleted.").arg(memberId), 5000);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    // Safely close event
+    if (!preparePageSwitch()) {
+        event->ignore();
+        return;
+    }
     event->accept();
 }
 

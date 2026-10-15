@@ -12,8 +12,8 @@ int main(int argc, char *argv[])
     app.setOrganizationName("MSMS");
     app.setOrganizationDomain("msms.org");
 
-    // Apply Catppuccin Mocha theme
-    MSMS::Theme::applyCatppuccinMocha(app);
+    // Apply native platform styling with restrained customisation
+    MSMS::Theme::applyNativeTheme(app);
 
     MSMS::MainWindow window;
     if (!window.initializeDatabase()) {

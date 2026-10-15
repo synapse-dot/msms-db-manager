@@ -2,51 +2,28 @@
 
 Desktop application for managing MSMS membership and society records, built with C++17, Qt 6 Widgets, Qt SQL, and SQLite.
 
-## Milestone 1 Overview
+## Milestone 2: Members Module & Native Platform Appearance
 
-Milestone 1 establishes the core architectural foundation, database lifecycle, Catppuccin Mocha theme, navigation layout, raw database inspector, query console interface, and the read-only **All Members** landing view.
+Milestone 2 completes the Members module and replaces the earlier Catppuccin theme with native platform styling with restrained customisation.
 
 ### Implemented Features
 
-1. **Database Selection & Lifecycle:**
-   - Startup database selection screen: open an existing MSMS database or create a new database.
-   - Remembers the last opened database path in user settings.
-   - File dialogs for opening existing SQLite files and creating new databases with overwrite confirmation.
-   - Dynamic database switching via **File → Open / Switch Database...**.
-   - Atomic database creation with transactional rollback on failure.
-   - Strict validation rejecting incompatible, empty, or corrupted databases without modifying disk files.
-   - Automatic `PRAGMA foreign_keys = ON;` enforcement on all connections.
+1. **Visual Styling:**
+   - Native platform look with restrained customisation.
+   - Standard Qt platform widgets, system typography, and OS-appropriate palettes.
+   - Removed Catppuccin Mocha theme overrides.
 
-2. **Database Infrastructure:**
-   - Exact nine-table schema defined in `design.md`:
-     - `members`
-     - `meetings`
-     - `meeting_attendance`
-     - `projects`
-     - `project_members`
-     - `committee_appointments`
-     - `activities`
-     - `external_competitions`
-     - `competition_participants`
-   - All schema constraints, date/time ordering checks, foreign keys with `ON DELETE RESTRICT`, and unique constraints.
-   - Required indexes: `idx_members_status`, `idx_attendance_member`, `idx_project_members_member`, `idx_committee_member`, `idx_competition_participants_member`.
+2. **Members Module:**
+   - **All Members (`Members → All Members`):** Displays all active and former members in a read-only table with hidden internal `member_id`, real-time `Ctrl+F` search, predefined sorting, and explicit `New Member` and `Edit Member` actions.
+   - **Active Members (`Members → Active Members`):** Displays only members whose status is `Active` with current-table search and empty state handling.
+   - **New / Edit Member Form (`Members → New / Edit Member`):**
+     - Full creation and editing with prepared statements.
+     - Validates required Name and Join Date (YYYY-MM-DD), plus email and phone formats.
+     - Warns on duplicate member names without blocking legitimate duplicates.
+     - Save keeps form open; Cancel confirms discarding unsaved changes.
+     - Delete confirms deletion and enforces foreign key restrictions (explaining why deletion is prevented if related historical records refer to the member).
+     - Protects against navigating away from unsaved changes.
 
-3. **User Interface & Catppuccin Mocha Theme:**
-   - Cohesive Catppuccin Mocha palette applied across menus, trees, tables, headers, dialogs, buttons, and status bars.
-   - Menu bar in specified order: **File**, **Tools**, **Tables**, **Forms**, **Help**.
-   - Collapsible navigation tree with all functional categories (**Members**, **Meetings**, **Projects**, **Committee**, **Activities**, **External Competition**).
-   - Single-page main workspace replacing views without tabs.
-   - Raw Database Inspector via the **Tables** menu to view raw table contents with primary keys.
-   - Clear placeholder cards for features and forms scheduled for future milestones.
-   - Compact SQL query entry bar at the bottom with transaction wrapping, statement safety checks, single-statement enforcement, DDL prohibition, and raw SQLite error reporting.
-
-4. **All Members View:**
-   - Default landing page immediately after opening a database.
-   - Displays all active and former members in a read-only table.
-   - Internal `member_id` is hidden; displays Name, Class, Phone, Email, Status, Join Date.
-   - Real-time `Ctrl+F` search filter across member fields.
-   - Predefined sort order with non-clickable headers.
-   - Graceful handling of empty databases with empty state notification.
 
 ## Prerequisites
 
