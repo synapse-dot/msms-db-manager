@@ -1,0 +1,29 @@
+# Build directories
+/build/
+/cmake-build-*/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Qt Autogen folders
+*_autogen/
+.qt/
+
+# IDEs and Editors (Neovim, VS Code, etc.)
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.netrwhist
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+*.db
