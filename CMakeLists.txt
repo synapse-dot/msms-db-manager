@@ -17,6 +17,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # Export compile commands for clangd / clang-tidy
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(ENABLE_VERBOSE_LOGGING "Enable verbose logging in debug mode" OFF)
+
 include(FetchContent)
 
 # ---------------------------------------------------------------------------
