@@ -406,8 +406,9 @@ int64_t DbService::GetLastInsertRowId() const {
 
 bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
     if (!IsOpen()) {
-        if (outError)
+        if (outError) {
             *outError = "Source database is not open.";
+        }
         return false;
     }
 
@@ -418,10 +419,11 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
     if (rc != SQLITE_OK || !destDb) {
         if (outError) {
             *outError = destDb ? wxString::FromUTF8(sqlite3_errmsg(destDb))
-                               : "Failed to open destination backup database.";
+                               : "Failed to open destination backup database file.";
         }
-        if (destDb)
+        if (destDb) {
             sqlite3_close_v2(destDb);
+        }
         return false;
     }
 
@@ -434,6 +436,7 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
         return false;
     }
 
+    // Copy pages in chunks of 100 pages per step
     do {
         rc = sqlite3_backup_step(backup, 100);
         if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
@@ -441,9 +444,9 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
         }
     } while (rc == SQLITE_OK || rc == SQLITE_BUSY || rc == SQLITE_LOCKED);
 
-    sqlite3_backup_finish(backup);
+    int finishRc = sqlite3_backup_finish(backup);
 
-    bool success = (rc == SQLITE_DONE);
+    bool success = (rc == SQLITE_DONE) && (finishRc == SQLITE_OK);
     if (!success && outError) {
         *outError = wxString::FromUTF8(sqlite3_errmsg(destDb));
     }
