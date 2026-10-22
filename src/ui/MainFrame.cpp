@@ -30,17 +30,28 @@ enum MenuItemId {
     ID_RESTORE_BACKUP
 };
 
+enum class NavigationPageType {
+    Category,
+    Table,
+    ScopedTable,
+    Form,
+    RelationshipForm
+};
+
 class NavigationItemData final : public wxTreeItemData {
 public:
-    NavigationItemData(wxString pageTitle, bool isPage)
-        : m_pageTitle(std::move(pageTitle)), m_isPage(isPage) {}
+    NavigationItemData(wxString pageTitle, NavigationPageType pageType)
+        : m_pageTitle(std::move(pageTitle)), m_pageType(pageType) {}
 
-    [[nodiscard]] bool IsPage() const noexcept { return m_isPage; }
+    [[nodiscard]] bool IsPage() const noexcept {
+        return m_pageType != NavigationPageType::Category;
+    }
     [[nodiscard]] const wxString& PageTitle() const noexcept { return m_pageTitle; }
+    [[nodiscard]] NavigationPageType PageType() const noexcept { return m_pageType; }
 
 private:
     wxString m_pageTitle;
-    bool m_isPage;
+    NavigationPageType m_pageType;
 };
 
 // Return the sizer that directly owns window, searching nested sizers too.
@@ -154,44 +165,47 @@ void MainFrame::BuildNavigationTree() {
     const wxTreeItemId root = m_navigationTree->AddRoot("Navigation");
 
     const auto addCategory = [this, root](const wxString& title) {
-        return m_navigationTree->AppendItem(root, title, -1, -1,
-                                            new NavigationItemData(title, false));
+        return m_navigationTree->AppendItem(
+            root, title, -1, -1, new NavigationItemData(title, NavigationPageType::Category));
     };
-    const auto addPage = [this](const wxTreeItemId& parent, const wxString& title) {
-        return m_navigationTree->AppendItem(parent, title, -1, -1,
-                                            new NavigationItemData(title, true));
+    const auto addPage = [this](const wxTreeItemId& parent, const wxString& title,
+                                NavigationPageType pageType) {
+        return m_navigationTree->AppendItem(
+            parent, title, -1, -1, new NavigationItemData(title, pageType));
     };
 
     const wxTreeItemId members = addCategory("Members");
-    const wxTreeItemId allMembers = addPage(members, "All Members");
-    addPage(members, "New / Edit Member");
+    const wxTreeItemId allMembers =
+        addPage(members, "All Members", NavigationPageType::Table);
+    addPage(members, "New / Edit Member", NavigationPageType::Form);
 
     const wxTreeItemId meetings = addCategory("Meetings");
-    addPage(meetings, "All Meetings");
-    addPage(meetings, "Attendees");
-    addPage(meetings, "New / Edit Meeting");
-    addPage(meetings, "Attendance Register");
+    addPage(meetings, "All Meetings", NavigationPageType::Table);
+    addPage(meetings, "Attendees", NavigationPageType::ScopedTable);
+    addPage(meetings, "New / Edit Meeting", NavigationPageType::Form);
+    addPage(meetings, "Attendance Register", NavigationPageType::RelationshipForm);
 
     const wxTreeItemId projects = addCategory("Projects");
-    addPage(projects, "All Projects");
-    addPage(projects, "Project Teams");
-    addPage(projects, "New / Edit Project");
-    addPage(projects, "New / Edit Project Members");
+    addPage(projects, "All Projects", NavigationPageType::Table);
+    addPage(projects, "Project Teams", NavigationPageType::ScopedTable);
+    addPage(projects, "New / Edit Project", NavigationPageType::Form);
+    addPage(projects, "New / Edit Project Members", NavigationPageType::RelationshipForm);
 
     const wxTreeItemId committee = addCategory("Committee");
-    addPage(committee, "All Appointments");
-    addPage(committee, "Current Committee");
-    addPage(committee, "New / Edit Appointment");
+    addPage(committee, "All Appointments", NavigationPageType::Table);
+    addPage(committee, "Current Committee", NavigationPageType::Table);
+    addPage(committee, "New / Edit Appointment", NavigationPageType::Form);
 
     const wxTreeItemId activities = addCategory("Activities");
-    addPage(activities, "All Activities");
-    addPage(activities, "New / Edit Activity");
+    addPage(activities, "All Activities", NavigationPageType::Table);
+    addPage(activities, "New / Edit Activity", NavigationPageType::Form);
 
     const wxTreeItemId competitions = addCategory("External Competitions");
-    addPage(competitions, "All Competitions");
-    addPage(competitions, "Competition Teams");
-    addPage(competitions, "New / Edit Competitions");
-    addPage(competitions, "New / Edit Competition Team Assignments");
+    addPage(competitions, "All Competitions", NavigationPageType::Table);
+    addPage(competitions, "Competition Teams", NavigationPageType::ScopedTable);
+    addPage(competitions, "New / Edit Competitions", NavigationPageType::Form);
+    addPage(competitions, "New / Edit Competition Team Assignments",
+            NavigationPageType::RelationshipForm);
 
     m_navigationTree->ExpandAll();
     m_navigationTree->SelectItem(allMembers);
