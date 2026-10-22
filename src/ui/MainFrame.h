@@ -2,15 +2,15 @@
 #define MSMS_MAIN_FRAME_H
 
 #include <wx/frame.h>
+#include <wx/panel.h>
+#include <wx/sizer.h>
 #include <wx/string.h>
 #include <wx/treectrl.h>
+#include <wx/window.h>
 
 namespace msms {
 
 class DbService;
-class wxPanel;
-class wxBoxSizer;
-class wxWindow;
 
 class MainFrame : public wxFrame {
 public:
