@@ -240,31 +240,39 @@ void MainFrame::BuildNavigationTree() {
 
     m_navigationTree->ExpandAll();
     m_navigationTree->SelectItem(allMembers);
-    ShowPlaceholderPage("All Members");
+    // Some native tree controls do not emit selection notifications for a
+    // programmatic initial selection. Route the selected item through the same
+    // controller path in that case.
+    if (!m_activeWorkspaceView) {
+        (void)NavigateToNavigationItem(allMembers);
+    }
 }
 
 void MainFrame::OnNavigationSelectionChanging(wxTreeEvent& event) {
-    const wxTreeItemId item = event.GetItem();
-    if (!item.IsOk()) {
+    if (!NavigateToNavigationItem(event.GetItem())) {
         event.Veto();
         return;
+    }
+    event.Skip();
+}
+
+bool MainFrame::NavigateToNavigationItem(const wxTreeItemId& item) {
+    if (!item.IsOk()) {
+        return false;
     }
 
     const auto* data = dynamic_cast<const NavigationItemData*>(m_navigationTree->GetItemData(item));
-    if (!data || !data->IsPage()) {
-        // Categories may expand or collapse, but only page items change the workspace.
-        event.Skip();
-        return;
+    if (!data) {
+        return false;
     }
 
-    if (item == m_activeNavigationItem && m_activeWorkspaceView) {
-        event.Skip();
-        return;
+    if (!data->IsPage()) {
+        // Categories may expand or collapse, but only page items change the workspace.
+        return true;
     }
 
     if (!ConfirmLeaveActiveForm()) {
-        event.Veto();
-        return;
+        return false;
     }
 
     const auto pageType = data->PageType();
@@ -276,14 +284,13 @@ void MainFrame::OnNavigationSelectionChanging(wxTreeEvent& event) {
         if (view) {
             view->Destroy();
         }
-        event.Veto();
         ShowDatabaseError(this, "Navigation Error",
                           "The selected page could not be opened. The current page was kept.");
-        return;
+        return false;
     }
 
     m_activeNavigationItem = item;
-    event.Skip();
+    return true;
 }
 
 bool MainFrame::ConfirmLeaveActiveForm() {
