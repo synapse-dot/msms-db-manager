@@ -51,6 +51,10 @@ flowchart TD
 ## Phase 1: Project Setup, Build System & Core Database Engine
 
 ### Step 1.1: Build System Configuration & Vendoring
+- Initialize repository metadata files per §5 and §9 of [tech.md](file:///home/synapse/Projects/msms-db-manager/database/tech.md):
+  - `LICENSE`: GNU General Public License v3.0 or later (`GPL-3.0-or-later`).
+  - `README.md`: Project description, build/run instructions, SmartScreen warning note, and SHA-256 verification instructions.
+  - `.gitignore`: Standard rules for C++, CMake build artifacts, SQLite database files (`*.db`), and IDE cache.
 - Initialize the directory structure matching §5 of [tech.md](file:///home/synapse/Projects/msms-db-manager/database/tech.md):
   - `src/db/`, `src/ui/`, `src/forms/`, `src/util/`, `tests/`, `packaging/`
 - Set up root `CMakeLists.txt` (CMake ≥ 3.27, C++17):
@@ -59,7 +63,7 @@ flowchart TD
   - Setup Catch2 (v3.x) via `FetchContent` for automated unit testing.
 - Vendor SQLite amalgamation:
   - Add official `sqlite3.c` and `sqlite3.h` (≥ 3.45.x) into `src/db/`.
-  - Create a CMake target `sqlite3_lib` with `-DSQLITE_ENABLE_JSON1`, `-DSQLITE_THREADSAFE=1`.
+  - Create a CMake target `sqlite3_lib` with `-DSQLITE_THREADSAFE=1` (redundant feature flags such as `-DSQLITE_ENABLE_JSON1` omitted since JSON1 is built-in by default from SQLite 3.38+).
 - Provide `CMakePresets.json` with presets:
   - `debug` (assertions enabled, verbose logging)
   - `release` (`-O2`, assertions disabled, optimized)
@@ -235,18 +239,21 @@ Instantiate `TablePage` for each required record view:
     - Grid is strictly read-only; no inline editing.
 
 ### Step 4.2: Implement the 3 Scoped Views
-Instantiate `ScopedPage` for the relationship views:
+Instantiate `ScopedPage` for the relationship views, defining empty states when no parent records exist:
 1. **Attendees (Meetings):**
    - Parent dropdown format: `"<title> — <meeting_date>"`.
    - Columns: `member_id`, `name`, `phone`, `email`.
+   - Empty state: If no meetings exist, display clear placeholder message (e.g. *"No meetings yet — create one to see attendees"*) and disable stepper controls.
    - Query joins `meeting_attendance` with `members`.
 2. **Project Teams (Projects):**
    - Parent dropdown format: `"<title>"`.
    - Columns: `member_id`, `name`, `phone`, `email`, `role`.
+   - Empty state: If no projects exist, display clear placeholder message (e.g. *"No projects yet — create one to see project teams"*) and disable stepper controls.
    - Query joins `project_members` with `members`.
 3. **Competition Teams (Competitions):**
    - Parent dropdown format: `"<title> — <year>"`.
    - Columns: `member_id`, `name`, `role`.
+   - Empty state: If no competitions exist, display clear placeholder message (e.g. *"No competitions yet — create one to see competition teams"*) and disable stepper controls.
    - Query joins `competition_participants` with `members`.
 
 ---
@@ -272,7 +279,7 @@ Instantiate `ScopedPage` for the relationship views:
     - **Cancel:** If dirty, prompt unsaved changes; returns to parent table.
     - **Delete:** Enabled only in Edit mode. Prompts confirmation dialog. On confirmation, deletes record and returns to parent table. Catches `SQLITE_CONSTRAINT_FOREIGNKEY` and shows plain-language relationship explanation.
   - Keyboard shortcuts: `Ctrl+S` to Save, `Esc` to Cancel.
-  - Dirty state tracking: Monitors changes across `wxTextCtrl`, `wxChoice`, `wxDatePickerCtrl`.
+  - Dirty state tracking: Monitors changes across `wxTextCtrl`, `wxChoice`, `wxDatePickerCtrl`, and `wxTimePickerCtrl`.
   - Clean field layout using `wxFlexGridSizer`.
 
 ### Step 5.3: Implement the 6 Record Forms
@@ -303,6 +310,8 @@ Instantiate `ScopedPage` for the relationship views:
 ### Step 6.1: Relationship Form Component (`RelationshipForm`)
 - Implement reusable `RelationshipForm` (`wxPanel`):
   - Top: Parent selector dropdown (`wxChoice`).
+    - **Empty Parent State:** If no parent records exist (e.g., no meetings, projects, or competitions), show a disabled dropdown with placeholder text (e.g. *"No meetings available"*), and disable checklist and Save button.
+    - **Dirty Tracking on Parent Switch:** If the user attempts to change the parent dropdown after making unsaved edits to the checklist or roles, intercept the event and trigger the standard unsaved changes prompt (**Save / Discard / Cancel**) before switching parents.
   - Middle: Scrolled checklist view (`wxScrolledWindow` / custom check list with extra columns):
     - **Composition Rule:**
       - All members with status `Active` are always listed.
@@ -351,7 +360,7 @@ Instantiate `ScopedPage` for the relationship views:
   - Display explicit modal confirmation explaining the action.
   - Open file dialog to choose backup file.
   - Run integrity verification (`PRAGMA integrity_check`) and table compatibility validation on candidate file.
-  - Create timestamped safety copy of current active database file (e.g. `<filename>.backup.<timestamp>`).
+  - Create a timestamped safety copy of the current active database file located directly **alongside it** in the same directory (e.g. `<working_dir>/<working_db_filename>.backup.<timestamp>`).
   - Close active SQLite connection.
   - Perform atomic replace (copy to temporary file, then atomic rename over working database).
   - If any failure occurs during verification or replace, abort immediately leaving the working database intact.
@@ -405,8 +414,11 @@ Instantiate `ScopedPage` for the relationship views:
   - Exclude glibc (rely on system glibc ≥ 2.31).
   - Output: `MSMSManager-<version>-x86_64.AppImage`.
 
-### Step 9.4: Release Checksum Generation
+### Step 9.4: Release Checksum Generation & Cross-Platform Release Verification
 - Add SHA-256 generation step to the release workflow to output `SHA256SUMS` alongside the Windows installer and Linux AppImage.
+- Define manual release verification checklist per §12.4 and §12.5 of [tech.md](file:///home/synapse/Projects/msms-db-manager/database/tech.md):
+  - **Linux AppImage:** Verify execution across target distributions: Debian 11 (glibc 2.31 floor), Ubuntu 20.04, Ubuntu 22.04, Ubuntu 24.04, Fedora 39, and current Arch Linux.
+  - **Windows Installer:** Verify installation and launch on Windows 10 (21H2) and Windows 11 (22H2).
 
 ---
 
@@ -423,3 +435,5 @@ Instantiate `ScopedPage` for the relationship views:
 | **Atomic Restore** | Test simulating failure during restore; verify working database is preserved. |
 | **Binary Size** | Check release binary meets < 15 MB requirement on Linux and Windows. |
 | **Startup Speed** | Verify cold start under 1 second. |
+| **Linux Distro Matrix** | Manual release test: AppImage executes on Debian 11, Ubuntu 20.04, 22.04, 24.04, Fedora 39, and Arch Linux (§12.4). |
+| **Windows OS Matrix** | Manual release test: NSIS installer executes on Windows 10 21H2 and Windows 11 22H2 (§12.5). |
