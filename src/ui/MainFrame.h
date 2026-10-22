@@ -26,9 +26,20 @@ public:
     bool SetWorkspaceView(wxWindow* view);
 
 private:
+    void BuildMenuBar();
     void BuildNavigationTree();
     void OnNavigationSelection(wxTreeEvent& event);
     void ShowPlaceholderPage(const wxString& pageTitle);
+
+    void OnOpenDatabase(wxCommandEvent& event);
+    void OnCreateNewDatabase(wxCommandEvent& event);
+    void OnSaveBackup(wxCommandEvent& event);
+    void OnRestoreBackup(wxCommandEvent& event);
+    void OnExit(wxCommandEvent& event);
+    void OnAbout(wxCommandEvent& event);
+
+    void RememberDatabasePath(const wxString& path);
+    bool ReopenDatabase(const wxString& path, wxString* outError = nullptr);
 
     DbService& m_dbService;
     wxPanel* m_contentPanel{nullptr};

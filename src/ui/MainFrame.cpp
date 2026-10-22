@@ -2,7 +2,15 @@
 
 #include <utility>
 
+#include <wx/accel.h>
+#include <wx/button.h>
+#include <wx/dialog.h>
+#include <wx/fileconf.h>
+#include <wx/filedlg.h>
+#include <wx/filefn.h>
 #include <wx/filename.h>
+#include <wx/menu.h>
+#include <wx/msgdlg.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
@@ -12,6 +20,15 @@
 
 namespace msms {
 namespace {
+
+constexpr const char* kApplicationVersion = "1.0.0";
+
+enum MenuItemId {
+    ID_OPEN_DATABASE = wxID_HIGHEST + 1,
+    ID_CREATE_NEW_DATABASE,
+    ID_SAVE_BACKUP,
+    ID_RESTORE_BACKUP
+};
 
 class NavigationItemData final : public wxTreeItemData {
 public:
@@ -27,8 +44,6 @@ private:
 };
 
 // Return the sizer that directly owns window, searching nested sizers too.
-// wxSizer::Detach(window) only detaches an item from that sizer, so finding the
-// actual owner prevents an ancestor sizer from continuing to manage the window.
 wxSizer* FindContainingSizer(wxSizer* sizer, wxWindow* window) {
     if (!sizer || !window) {
         return nullptr;
@@ -48,6 +63,22 @@ wxSizer* FindContainingSizer(wxSizer* sizer, wxWindow* window) {
     }
 
     return nullptr;
+}
+
+bool SameFilePath(const wxString& first, const wxString& second) {
+    if (first.IsEmpty() || second.IsEmpty()) {
+        return false;
+    }
+
+    wxFileName firstFile(first);
+    wxFileName secondFile(second);
+    firstFile.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
+    secondFile.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
+    return firstFile.SameAs(secondFile);
+}
+
+void ShowDatabaseError(wxWindow* parent, const wxString& title, const wxString& message) {
+    wxMessageBox(message, title, wxOK | wxICON_ERROR, parent);
 }
 
 } // namespace
@@ -82,11 +113,41 @@ MainFrame::MainFrame(DbService& dbService)
     frameSizer->Add(m_contentPanel, 1, wxEXPAND);
     SetSizer(frameSizer);
 
+    BuildMenuBar();
     m_navigationTree->Bind(wxEVT_TREE_SEL_CHANGED, &MainFrame::OnNavigationSelection, this);
 
     BuildNavigationTree();
     UpdateTitle();
     Centre();
+}
+
+void MainFrame::BuildMenuBar() {
+    auto* fileMenu = new wxMenu;
+    fileMenu->Append(ID_OPEN_DATABASE, "&Open Database...");
+    fileMenu->Append(ID_CREATE_NEW_DATABASE, "&Create New Database...");
+    fileMenu->AppendSeparator();
+    fileMenu->Append(ID_SAVE_BACKUP, "Save &Backup...");
+    fileMenu->Append(ID_RESTORE_BACKUP, "&Restore Backup...");
+    fileMenu->AppendSeparator();
+    fileMenu->Append(wxID_EXIT, "E&xit\tCtrl+Q");
+
+    auto* helpMenu = new wxMenu;
+    helpMenu->Append(wxID_ABOUT, "&About");
+
+    auto* menuBar = new wxMenuBar;
+    menuBar->Append(fileMenu, "&File");
+    menuBar->Append(helpMenu, "&Help");
+    SetMenuBar(menuBar);
+
+    const wxAcceleratorEntry exitShortcut(wxACCEL_CTRL, 'Q', wxID_EXIT);
+    SetAcceleratorTable(wxAcceleratorTable(1, &exitShortcut));
+
+    Bind(wxEVT_MENU, &MainFrame::OnOpenDatabase, this, ID_OPEN_DATABASE);
+    Bind(wxEVT_MENU, &MainFrame::OnCreateNewDatabase, this, ID_CREATE_NEW_DATABASE);
+    Bind(wxEVT_MENU, &MainFrame::OnSaveBackup, this, ID_SAVE_BACKUP);
+    Bind(wxEVT_MENU, &MainFrame::OnRestoreBackup, this, ID_RESTORE_BACKUP);
+    Bind(wxEVT_MENU, &MainFrame::OnExit, this, wxID_EXIT);
+    Bind(wxEVT_MENU, &MainFrame::OnAbout, this, wxID_ABOUT);
 }
 
 void MainFrame::BuildNavigationTree() {
@@ -149,8 +210,6 @@ void MainFrame::OnNavigationSelection(wxTreeEvent& event) {
         ShowPlaceholderPage(data->PageTitle());
     }
 
-    // Selecting a category does not change the current workspace. Its expansion
-    // and collapse behaviour remains native to wxTreeCtrl.
     event.Skip();
 }
 
@@ -185,15 +244,11 @@ bool MainFrame::SetWorkspaceView(wxWindow* view) {
     wxSizer* const previousSizer =
         (view && previousParent) ? FindContainingSizer(previousParent->GetSizer(), view) : nullptr;
 
-    // Reparent first so a failure leaves the existing layout untouched. Once it
-    // succeeds, detach the view from its former sizer so that sizer cannot keep
-    // positioning it after it moves into the workspace.
     if (view && previousParent != m_workspacePanel && !view->Reparent(m_workspacePanel)) {
         return false;
     }
 
-    // Detach before Clear(true): the incoming view may already be registered
-    // with the workspace sizer, and Clear(true) would otherwise destroy it.
+    // Detach the incoming view before Clear(true), which destroys managed windows.
     if (previousSizer && !previousSizer->Detach(view)) {
         if (previousParent && view->GetParent() != previousParent) {
             view->Reparent(previousParent);
@@ -216,10 +271,314 @@ bool MainFrame::SetWorkspaceView(wxWindow* view) {
     return true;
 }
 
+void MainFrame::OnOpenDatabase(wxCommandEvent& /*event*/) {
+    wxFileDialog dialog(
+        this, "Open Database", wxEmptyString, wxEmptyString,
+        "SQLite Database (*.db;*.sqlite;*.sqlite3)|*.db;*.sqlite;*.sqlite3|All Files (*.*)|*.*",
+        wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+    if (dialog.ShowModal() != wxID_OK) {
+        return;
+    }
+
+    const wxString path = dialog.GetPath();
+
+    // Validate with a separate connection first. A failed selection must not close
+    // the database already being used by the main frame.
+    wxString error;
+    {
+        DbService candidate;
+        if (!candidate.Open(path, &error) || !candidate.CheckCompatibility(&error)) {
+            ShowDatabaseError(this, "Database Open Error",
+                              wxString("Could not open a compatible MSMS database:\n\n") + error);
+            return;
+        }
+    }
+
+    if (!ReopenDatabase(path, &error)) {
+        ShowDatabaseError(this, "Database Open Error",
+                          wxString("Could not switch to the selected database:\n\n") + error);
+    }
+}
+
+void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
+    wxFileDialog dialog(this, "Create New Database", wxEmptyString, "members.db",
+                        "SQLite Database (*.db)|*.db|All Files (*.*)|*.*", wxFD_SAVE);
+    if (dialog.ShowModal() != wxID_OK) {
+        return;
+    }
+
+    const wxString path = dialog.GetPath();
+    if (wxDirExists(path)) {
+        ShowDatabaseError(this, "Invalid Database Path",
+                          "The selected path is a directory. Choose a database filename instead.");
+        return;
+    }
+
+    if (wxFileExists(path)) {
+        const int answer = wxMessageBox(
+            wxString("The file '") + path +
+                "' already exists. Creating a new database will replace this file and all records "
+                "it contains. This action cannot be undone.\n\nDo you want to continue?",
+            "Confirm Database Replacement", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this);
+        if (answer != wxYES) {
+            return;
+        }
+    }
+
+    wxFileName destination(path);
+    destination.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
+    const wxString tempPrefix =
+        destination.GetPathWithSep() + "." + destination.GetFullName() + ".tmp.";
+    const wxString tempPath = wxFileName::CreateTempFileName(tempPrefix);
+    if (tempPath.IsEmpty()) {
+        ShowDatabaseError(this, "Database Creation Error",
+                          "Could not create a temporary database file in the destination directory.");
+        return;
+    }
+
+    wxString error;
+    {
+        DbService candidate;
+        if (!candidate.CreateNew(tempPath, &error) || !candidate.CheckCompatibility(&error)) {
+            candidate.Close();
+            wxRemoveFile(tempPath);
+            ShowDatabaseError(this, "Database Creation Error",
+                              wxString("Could not initialise a new database:\n\n") + error);
+            return;
+        }
+    }
+
+    const wxString previousPath = m_dbService.GetDbPath();
+    const bool replacingOpenDatabase =
+        m_dbService.IsOpen() && SameFilePath(previousPath, path);
+    if (replacingOpenDatabase) {
+        m_dbService.Close();
+    }
+
+    if (!wxRenameFile(tempPath, path, true)) {
+        if (wxFileExists(tempPath)) {
+            wxRemoveFile(tempPath);
+        }
+        if (replacingOpenDatabase) {
+            wxString reopenError;
+            ReopenDatabase(previousPath, &reopenError);
+        }
+        ShowDatabaseError(this, "Database Creation Error",
+                          "The initialised database could not be moved to the selected location. "
+                          "The existing file has not been intentionally deleted by this operation.");
+        return;
+    }
+
+    if (!ReopenDatabase(path, &error)) {
+        ShowDatabaseError(this, "Database Creation Error",
+                          wxString("The new database was created, but could not be opened:\n\n") +
+                              error);
+    }
+}
+
+void MainFrame::OnSaveBackup(wxCommandEvent& /*event*/) {
+    if (!m_dbService.IsOpen()) {
+        ShowDatabaseError(this, "Backup Error", "There is no open database to back up.");
+        return;
+    }
+
+    wxFileDialog dialog(this, "Save Database Backup", wxEmptyString, "members-backup.db",
+                        "SQLite Database (*.db)|*.db|All Files (*.*)|*.*", wxFD_SAVE);
+    if (dialog.ShowModal() != wxID_OK) {
+        return;
+    }
+
+    const wxString path = dialog.GetPath();
+    if (SameFilePath(path, m_dbService.GetDbPath())) {
+        ShowDatabaseError(this, "Backup Error",
+                          "The backup destination must not be the currently open database file.");
+        return;
+    }
+
+    if (wxFileExists(path)) {
+        const int answer = wxMessageBox(
+            wxString("The file '") + path +
+                "' already exists. Replacing it will overwrite that backup file.\n\nContinue?",
+            "Confirm Backup Replacement", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this);
+        if (answer != wxYES) {
+            return;
+        }
+    }
+
+    wxFileName destination(path);
+    destination.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
+    const wxString tempPrefix =
+        destination.GetPathWithSep() + "." + destination.GetFullName() + ".tmp.";
+    const wxString tempPath = wxFileName::CreateTempFileName(tempPrefix);
+    if (tempPath.IsEmpty()) {
+        ShowDatabaseError(this, "Backup Error",
+                          "Could not create a temporary backup file in the destination directory.");
+        return;
+    }
+
+    wxString error;
+    if (!m_dbService.BackupTo(tempPath, &error)) {
+        wxRemoveFile(tempPath);
+        ShowDatabaseError(this, "Backup Error",
+                          wxString("The database backup failed:\n\n") + error);
+        return;
+    }
+
+    if (!wxRenameFile(tempPath, path, true)) {
+        if (wxFileExists(tempPath)) {
+            wxRemoveFile(tempPath);
+        }
+        ShowDatabaseError(this, "Backup Error",
+                          "The backup was created but could not be moved to the selected path.");
+        return;
+    }
+
+    wxMessageBox("Database backup saved successfully.", "Backup Complete",
+                 wxOK | wxICON_INFORMATION, this);
+}
+
+void MainFrame::OnRestoreBackup(wxCommandEvent& /*event*/) {
+    if (!m_dbService.IsOpen()) {
+        ShowDatabaseError(this, "Restore Error", "There is no open database to restore.");
+        return;
+    }
+
+    wxFileDialog dialog(
+        this, "Select Database Backup", wxEmptyString, wxEmptyString,
+        "SQLite Database (*.db;*.sqlite;*.sqlite3)|*.db;*.sqlite;*.sqlite3|All Files (*.*)|*.*",
+        wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+    if (dialog.ShowModal() != wxID_OK) {
+        return;
+    }
+
+    const wxString backupPath = dialog.GetPath();
+    const wxString activePath = m_dbService.GetDbPath();
+    if (SameFilePath(backupPath, activePath)) {
+        ShowDatabaseError(this, "Restore Error",
+                          "The selected backup is the currently open database.");
+        return;
+    }
+
+    const int answer = wxMessageBox(
+        wxString("Restore '") + wxFileName(backupPath).GetFullName() + "' over '" +
+            wxFileName(activePath).GetFullName() +
+            "'?\n\nThis replaces the current database contents. A safety copy of the current "
+            "database will be created before replacement.",
+        "Confirm Database Restore", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this);
+    if (answer != wxYES) {
+        return;
+    }
+
+    wxString error;
+    if (!m_dbService.RestoreFrom(backupPath, &error)) {
+        const wxString restoreError = error;
+        if (!m_dbService.IsOpen()) {
+            wxString reopenError;
+            ReopenDatabase(activePath, &reopenError);
+        }
+        ShowDatabaseError(this, "Restore Error",
+                          wxString("Could not restore the database:\n\n") + restoreError);
+        return;
+    }
+
+    UpdateTitle();
+    wxMessageBox("Database restored successfully.", "Restore Complete",
+                 wxOK | wxICON_INFORMATION, this);
+}
+
+void MainFrame::OnExit(wxCommandEvent& /*event*/) {
+    Close(true);
+}
+
+void MainFrame::OnAbout(wxCommandEvent& /*event*/) {
+    wxDialog dialog(this, wxID_ANY, "About MSMS Manager", wxDefaultPosition, wxDefaultSize,
+                    wxDEFAULT_DIALOG_STYLE);
+    auto* rootSizer = new wxBoxSizer(wxVERTICAL);
+
+    auto* title = new wxStaticText(&dialog, wxID_ANY, "MSMS Manager");
+    wxFont titleFont = title->GetFont();
+    titleFont.SetPointSize(titleFont.GetPointSize() + 3);
+    titleFont.SetWeight(wxFONTWEIGHT_BOLD);
+    title->SetFont(titleFont);
+
+    auto* version = new wxStaticText(
+        &dialog, wxID_ANY, wxString("Version ") + kApplicationVersion);
+    auto* purpose = new wxStaticText(
+        &dialog, wxID_ANY,
+        "An offline desktop application for managing MSMS membership and society records.");
+    purpose->Wrap(440);
+
+    auto* licenceHeading = new wxStaticText(&dialog, wxID_ANY, "Licence");
+    wxFont licenceFont = licenceHeading->GetFont();
+    licenceFont.SetWeight(wxFONTWEIGHT_BOLD);
+    licenceHeading->SetFont(licenceFont);
+
+    auto* licence = new wxStaticText(
+        &dialog, wxID_ANY,
+        "GNU General Public License v3.0 or later (GPL-3.0-or-later).\n"
+        "The full licence text is distributed with this application in the LICENSE file.");
+    licence->Wrap(440);
+
+    rootSizer->Add(title, 0, wxALL, 12);
+    rootSizer->Add(version, 0, wxLEFT | wxRIGHT | wxBOTTOM, 12);
+    rootSizer->Add(purpose, 0, wxLEFT | wxRIGHT | wxBOTTOM, 12);
+    rootSizer->Add(licenceHeading, 0, wxLEFT | wxRIGHT | wxBOTTOM, 12);
+    rootSizer->Add(licence, 0, wxLEFT | wxRIGHT | wxBOTTOM, 12);
+
+    auto* okButton = new wxButton(&dialog, wxID_OK, "OK");
+    okButton->SetDefault();
+    rootSizer->Add(okButton, 0, wxALIGN_RIGHT | wxLEFT | wxRIGHT | wxBOTTOM, 12);
+
+    dialog.SetSizerAndFit(rootSizer);
+    dialog.SetMinSize(wxSize(480, dialog.GetSize().GetHeight()));
+    dialog.CentreOnParent();
+    dialog.ShowModal();
+}
+
+void MainFrame::RememberDatabasePath(const wxString& path) {
+    wxFileConfig config("MSMSManager");
+    config.Write("LastDatabasePath", path);
+    if (!config.Flush()) {
+        wxMessageBox("The database is open, but its path could not be saved for the next launch.",
+                     "Configuration Warning", wxOK | wxICON_WARNING, this);
+    }
+}
+
+bool MainFrame::ReopenDatabase(const wxString& path, wxString* outError) {
+    const wxString previousPath = m_dbService.GetDbPath();
+    wxString error;
+    if (m_dbService.Open(path, &error) && m_dbService.CheckCompatibility(&error)) {
+        UpdateTitle();
+        RememberDatabasePath(path);
+        return true;
+    }
+
+    const wxString switchError = error;
+    m_dbService.Close();
+
+    // Restore the prior connection when a switch failed after pre-validation.
+    if (!previousPath.IsEmpty() && wxFileExists(previousPath)) {
+        wxString restoreError;
+        if (m_dbService.Open(previousPath, &restoreError) &&
+            m_dbService.CheckCompatibility(&restoreError)) {
+            UpdateTitle();
+        } else {
+            m_dbService.Close();
+            UpdateTitle();
+        }
+    } else {
+        UpdateTitle();
+    }
+
+    if (outError) {
+        *outError = switchError;
+    }
+    return false;
+}
+
 void MainFrame::UpdateTitle() {
     if (m_dbService.IsOpen()) {
         const wxFileName databaseFile(m_dbService.GetDbPath());
-        // Explicit UTF-8 bytes keep the em dash independent of source/execution charset.
         SetTitle(wxString::FromUTF8("MSMS Manager \xE2\x80\x94 ") + databaseFile.GetFullName());
     } else {
         SetTitle("MSMS Manager");
