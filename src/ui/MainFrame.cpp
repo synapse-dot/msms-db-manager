@@ -574,14 +574,22 @@ wxWindow* MainFrame::CreateRecordTablePage(const wxString& pageTitle) {
         return nullptr;
     }
 
+    // Defer workspace replacement until the button event has returned; this
+    // page owns the button handler and will be destroyed by the navigation.
     options.onNew = [this, formTitle]() {
-        (void)OpenFormFromTable(formTitle, std::nullopt);
+        CallAfter([this, formTitle]() {
+            (void)OpenFormFromTable(formTitle, std::nullopt);
+        });
     };
     options.onEdit = [this, formTitle](long long id) {
-        (void)OpenFormFromTable(formTitle, wxString::Format("%lld", id));
+        CallAfter([this, formTitle, id]() {
+            (void)OpenFormFromTable(formTitle, wxString::Format("%lld", id));
+        });
     };
     options.onEditKey = [this, formTitle](const wxString& key) {
-        (void)OpenFormFromTable(formTitle, key);
+        CallAfter([this, formTitle, key]() {
+            (void)OpenFormFromTable(formTitle, key);
+        });
     };
 
     return new TablePage(m_workspacePanel, std::move(options));
