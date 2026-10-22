@@ -45,6 +45,7 @@ private:
     [[nodiscard]] wxWindow* CreateRecordTablePage(const wxString& pageTitle);
     [[nodiscard]] bool OpenFormFromTable(
         const wxString& formTitle, const std::optional<wxString>& recordKey);
+    void RefreshActiveTablePage();
     // Replacing the current view destroys the previous workspace child. This is
     // private so workspace navigation must pass through the tree controller.
     bool SetWorkspaceView(wxWindow* view);
