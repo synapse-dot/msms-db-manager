@@ -23,6 +23,8 @@ struct TableRow {
     long long id{0}; // Kept as metadata; never rendered as a column.
     std::vector<wxString> cells;
     wxString filterValue;
+    // Optional serialised key for tables whose primary key is composite.
+    wxString recordKey;
 };
 
 struct TableFilterOption {
@@ -34,10 +36,12 @@ struct TablePageOptions {
     wxString title;
     std::vector<TableColumn> columns;
     std::vector<TableRow> rows; // Rows arrive in the page's fixed specification order.
-    std::vector<TableFilterOption> filterOptions; // Empty means no filter widget.
+    std::vector<TableFilterOption> filterOptions; // Static or dynamically queried choices.
+    bool showFilter{false}; // Allows an All-only dropdown when a dynamic choice list is empty.
     wxString allFilterLabel{"All"};
     std::function<void()> onNew;
     std::function<void(long long)> onEdit;
+    std::function<void(const wxString&)> onEditKey; // For composite primary keys.
 };
 
 // Reusable read-only table. Search covers all displayed cells; row ordering
