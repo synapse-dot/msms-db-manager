@@ -1,7 +1,9 @@
 #include "MainFrame.h"
 
+#include <functional>
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include <wx/accel.h>
 #include <wx/button.h>
@@ -18,6 +20,7 @@
 #include <wx/treectrl.h>
 
 #include "db/DbService.h"
+#include "ui/TablePage.h"
 
 namespace msms {
 namespace {
@@ -59,7 +62,8 @@ private:
 
 class BlankNavigationForm final : public wxPanel, public INavigationForm {
 public:
-    BlankNavigationForm(wxWindow* parent, const wxString& pageTitle)
+    BlankNavigationForm(wxWindow* parent, const wxString& pageTitle,
+                        const std::optional<wxString>& recordKey)
         : wxPanel(parent, wxID_ANY) {
         auto* layout = new wxBoxSizer(wxVERTICAL);
 
@@ -69,9 +73,20 @@ public:
         titleFont.SetPointSize(titleFont.GetPointSize() + 2);
         title->SetFont(titleFont);
 
-        auto* mode = new wxStaticText(
-            this, wxID_ANY,
-            "Create mode — blank form. Fields will be provided by the feature-specific form view.");
+        wxString modeText =
+            "Create mode — blank form. Fields will be provided by the feature-specific form view.";
+        if (recordKey) {
+            wxString recordDescription = *recordKey;
+            const int separator = recordDescription.Find(static_cast<wxChar>(0x1f));
+            if (separator != wxNOT_FOUND) {
+                recordDescription = "Start Date: " + recordDescription.Left(separator) +
+                                    ", Office: " + recordDescription.Mid(separator + 1);
+            }
+            modeText = "Edit mode — selected record key: " + recordDescription +
+                       ". Editable record fields will be provided by the feature-specific form view.";
+        }
+
+        auto* mode = new wxStaticText(this, wxID_ANY, modeText);
         mode->Wrap(480);
 
         layout->Add(title, 0, wxALL, 16);
@@ -287,7 +302,14 @@ bool MainFrame::NavigateToNavigationItem(const wxTreeItemId& item) {
     const bool formPage =
         pageType && (*pageType == NavigationPageType::Form ||
                      *pageType == NavigationPageType::RelationshipForm);
-    wxWindow* const view = CreateNavigationPage(data->PageTitle(), formPage);
+    std::optional<wxString> recordKey;
+    if (m_pendingFormOpen && m_pendingFormTitle == data->PageTitle()) {
+        recordKey = m_pendingFormRecordKey;
+        m_pendingFormOpen = false;
+        m_pendingFormTitle.Clear();
+        m_pendingFormRecordKey.reset();
+    }
+    wxWindow* const view = CreateNavigationPage(data->PageTitle(), formPage, recordKey);
     if (!view || !SetWorkspaceView(view)) {
         if (view) {
             view->Destroy();
@@ -365,11 +387,16 @@ bool MainFrame::ConfirmLeaveActiveForm() {
     return false;
 }
 
-wxWindow* MainFrame::CreateNavigationPage(const wxString& pageTitle, bool formPage) {
+wxWindow* MainFrame::CreateNavigationPage(
+    const wxString& pageTitle, bool formPage, const std::optional<wxString>& recordKey) {
     if (formPage) {
-        // Forms are always entered as a new, clean record. A real form view can
-        // replace this placeholder while implementing INavigationForm.
-        return new BlankNavigationForm(m_workspacePanel, pageTitle);
+        // The form receives the selected row key now; feature-specific fields
+        // and persistence will be implemented by the individual form views.
+        return new BlankNavigationForm(m_workspacePanel, pageTitle, recordKey);
+    }
+
+    if (wxWindow* tablePage = CreateRecordTablePage(pageTitle)) {
+        return tablePage;
     }
 
     auto* view = new wxPanel(m_workspacePanel, wxID_ANY);
@@ -388,6 +415,232 @@ wxWindow* MainFrame::CreateNavigationPage(const wxString& pageTitle, bool formPa
     viewSizer->Add(description, 0, wxLEFT | wxRIGHT | wxBOTTOM, 16);
     view->SetSizer(viewSizer);
     return view;
+}
+
+wxWindow* MainFrame::CreateRecordTablePage(const wxString& pageTitle) {
+    TablePageOptions options;
+    options.title = pageTitle;
+    wxString formTitle;
+
+    const auto loadRows = [this](const wxString& sql, const auto& makeRow) {
+        std::vector<TableRow> rows;
+        if (!m_dbService.IsOpen()) {
+            return rows;
+        }
+
+        wxString error;
+        auto statement = m_dbService.Prepare(sql, &error);
+        if (!statement) {
+            ShowDatabaseError(this, "Database Query Error",
+                              wxString("Could not load table data:
+
+") + error);
+            return rows;
+        }
+
+        while (statement->Step()) {
+            rows.push_back(makeRow(*statement));
+        }
+        return rows;
+    };
+
+    if (pageTitle == "All Members") {
+        formTitle = "New / Edit Member";
+        options.columns = {{"Name", 180}, {"Class", 80}, {"Phone", 130},
+                           {"Email", 220}, {"Status", 90}, {"Join Date", 110}};
+        options.filterOptions = {{"Active", "Active"}, {"Former", "Former"}};
+        options.rows = loadRows(
+            "SELECT member_id, name, class, phone, email, status, join_date "
+            "FROM members ORDER BY name COLLATE NOCASE ASC, member_id ASC;",
+            [](Statement& statement) {
+                TableRow row;
+                row.id = statement.GetInt64(0);
+                row.cells = {statement.GetText(1), statement.GetText(2), statement.GetText(3),
+                             statement.GetText(4), statement.GetText(5), statement.GetText(6)};
+                row.filterValue = statement.GetText(5);
+                return row;
+            });
+    } else if (pageTitle == "All Meetings") {
+        formTitle = "New / Edit Meeting";
+        options.columns = {{"Title", 180}, {"Type", 70}, {"Date", 110},
+                           {"Start", 80}, {"End", 80}, {"Location", 160}};
+        options.filterOptions = {{"AGM", "AGM"}, {"EGM", "EGM"}, {"ECM", "ECM"}};
+        options.rows = loadRows(
+            "SELECT meeting_id, title, type, meeting_date, start_time, end_time, location "
+            "FROM meetings "
+            "ORDER BY CASE WHEN meeting_date IS NULL OR trim(meeting_date) = '' "
+            "THEN 1 ELSE 0 END ASC, meeting_date DESC, meeting_id ASC;",
+            [](Statement& statement) {
+                TableRow row;
+                row.id = statement.GetInt64(0);
+                row.cells = {statement.GetText(1), statement.GetText(2), statement.GetText(3),
+                             statement.GetText(4), statement.GetText(5), statement.GetText(6)};
+                row.filterValue = statement.GetText(2);
+                return row;
+            });
+    } else if (pageTitle == "All Projects") {
+        formTitle = "New / Edit Project";
+        options.columns = {{"Title", 200}, {"Status", 100}, {"Start", 110},
+                           {"Target End", 110}, {"Actual End", 110}};
+        options.filterOptions = {{"Planned", "Planned"}, {"Ongoing", "Ongoing"},
+                                 {"Completed", "Completed"}, {"Cancelled", "Cancelled"}};
+        options.rows = loadRows(
+            "SELECT project_id, title, status, start_date, target_end_date, actual_end_date "
+            "FROM projects ORDER BY title COLLATE NOCASE ASC, project_id ASC;",
+            [](Statement& statement) {
+                TableRow row;
+                row.id = statement.GetInt64(0);
+                row.cells = {statement.GetText(1), statement.GetText(2), statement.GetText(3),
+                             statement.GetText(4), statement.GetText(5)};
+                row.filterValue = statement.GetText(2);
+                return row;
+            });
+    } else if (pageTitle == "All Appointments" || pageTitle == "Current Committee") {
+        formTitle = "New / Edit Appointment";
+        options.columns = {{"Office", 180}, {"Member", 180},
+                           {"Start Date", 110}, {"End Date", 110}};
+        wxString sql =
+            "SELECT ca.start_date, ca.office, ca.end_date, m.name "
+            "FROM committee_appointments AS ca "
+            "JOIN members AS m ON m.member_id = ca.member_id ";
+        if (pageTitle == "Current Committee") {
+            sql +=
+                "WHERE start_date <= date('now', 'localtime') "
+                "AND (end_date IS NULL OR end_date >= date('now', 'localtime')) "
+                "ORDER BY office COLLATE NOCASE ASC, start_date DESC;";
+        } else {
+            sql += "ORDER BY ca.start_date DESC, ca.office COLLATE NOCASE ASC;";
+        }
+        options.rows = loadRows(sql, [](Statement& statement) {
+            TableRow row;
+            const wxString startDate = statement.GetText(0);
+            row.recordKey = startDate;
+            row.recordKey.Append(static_cast<wxChar>(0x1f));
+            row.recordKey.Append(statement.GetText(1));
+            row.cells = {statement.GetText(1), statement.GetText(3), startDate,
+                         statement.GetText(2)};
+            return row;
+        });
+    } else if (pageTitle == "All Activities") {
+        formTitle = "New / Edit Activity";
+        options.columns = {{"Title", 180}, {"Type", 100}, {"Date", 110},
+                           {"Start", 80}, {"End", 80}, {"Location", 160}};
+        options.showFilter = true;
+        if (m_dbService.IsOpen()) {
+            wxString error;
+            auto typeStatement = m_dbService.Prepare(
+                "SELECT DISTINCT type FROM activities "
+                "WHERE type IS NOT NULL AND trim(type) <> '' "
+                "ORDER BY type COLLATE NOCASE ASC;",
+                &error);
+            if (!typeStatement) {
+                ShowDatabaseError(this, "Database Query Error",
+                                  wxString("Could not load activity types:
+
+") + error);
+            } else {
+                while (typeStatement->Step()) {
+                    const wxString type = typeStatement->GetText(0);
+                    options.filterOptions.push_back({type, type});
+                }
+            }
+        }
+        options.rows = loadRows(
+            "SELECT activity_id, title, type, activity_date, start_time, end_time, location "
+            "FROM activities "
+            "ORDER BY CASE WHEN activity_date IS NULL OR trim(activity_date) = '' "
+            "THEN 1 ELSE 0 END ASC, activity_date DESC, activity_id ASC;",
+            [](Statement& statement) {
+                TableRow row;
+                row.id = statement.GetInt64(0);
+                row.cells = {statement.GetText(1), statement.GetText(2), statement.GetText(3),
+                             statement.GetText(4), statement.GetText(5), statement.GetText(6)};
+                row.filterValue = statement.GetText(2);
+                return row;
+            });
+    } else if (pageTitle == "All Competitions") {
+        formTitle = "New / Edit Competitions";
+        options.columns = {{"Title", 240}, {"Year", 80}};
+        options.rows = loadRows(
+            "SELECT competition_id, title, year FROM external_competitions "
+            "ORDER BY title COLLATE NOCASE ASC, year ASC;",
+            [](Statement& statement) {
+                TableRow row;
+                row.id = statement.GetInt64(0);
+                row.cells = {statement.GetText(1), statement.GetText(2)};
+                return row;
+            });
+    } else {
+        return nullptr;
+    }
+
+    // Defer workspace replacement until the button event has returned; this
+    // page owns the button handler and will be destroyed by the navigation.
+    options.onNew = [this, formTitle]() {
+        CallAfter([this, formTitle]() {
+            (void)OpenFormFromTable(formTitle, std::nullopt);
+        });
+    };
+    options.onEdit = [this, formTitle](long long id) {
+        CallAfter([this, formTitle, id]() {
+            (void)OpenFormFromTable(formTitle, wxString::Format("%lld", id));
+        });
+    };
+    options.onEditKey = [this, formTitle](const wxString& key) {
+        CallAfter([this, formTitle, key]() {
+            (void)OpenFormFromTable(formTitle, key);
+        });
+    };
+
+    return new TablePage(m_workspacePanel, std::move(options));
+}
+
+bool MainFrame::OpenFormFromTable(
+    const wxString& formTitle, const std::optional<wxString>& recordKey) {
+    const auto root = m_navigationTree->GetRootItem();
+    std::function<wxTreeItemId(const wxTreeItemId&)> findPage =
+        [this, &findPage, &formTitle](const wxTreeItemId& parent) -> wxTreeItemId {
+        wxTreeItemIdValue cookie;
+        for (wxTreeItemId child = m_navigationTree->GetFirstChild(parent, cookie);
+             child.IsOk(); child = m_navigationTree->GetNextChild(parent, cookie)) {
+            const auto* data = dynamic_cast<const NavigationItemData*>(
+                m_navigationTree->GetItemData(child));
+            if (data && data->IsPage() && data->PageTitle() == formTitle) {
+                return child;
+            }
+            const wxTreeItemId nested = findPage(child);
+            if (nested.IsOk()) {
+                return nested;
+            }
+        }
+        return wxTreeItemId();
+    };
+
+    const wxTreeItemId target = findPage(root);
+    if (!target.IsOk()) {
+        ShowDatabaseError(this, "Navigation Error",
+                          wxString("Could not find form page: ") + formTitle);
+        return false;
+    }
+
+    m_pendingFormOpen = true;
+    m_pendingFormTitle = formTitle;
+    m_pendingFormRecordKey = recordKey;
+    m_navigationTree->SelectItem(target);
+
+    // Some native tree controls do not emit a changing event for programmatic
+    // selection. Call the controller directly if the event did not navigate.
+    if (m_activeNavigationItem != target && !NavigateToNavigationItem(target)) {
+        m_pendingFormOpen = false;
+        m_pendingFormTitle.Clear();
+        m_pendingFormRecordKey.reset();
+        return false;
+    }
+
+    m_pendingFormOpen = false;
+    m_pendingFormTitle.Clear();
+    m_pendingFormRecordKey.reset();
+    return m_activeNavigationItem == target;
 }
 
 bool MainFrame::SetWorkspaceView(wxWindow* view) {
@@ -637,6 +890,7 @@ void MainFrame::OnRestoreBackup(wxCommandEvent& /*event*/) {
     }
 
     UpdateTitle();
+    RefreshActiveTablePage();
     wxMessageBox("Database restored successfully.", "Restore Complete",
                  wxOK | wxICON_INFORMATION, this);
 }
@@ -705,6 +959,7 @@ bool MainFrame::ReopenDatabase(const wxString& path, wxString* outError) {
     if (m_dbService.Open(path, &error) && m_dbService.CheckCompatibility(&error)) {
         UpdateTitle();
         RememberDatabasePath(path);
+        RefreshActiveTablePage();
         return true;
     }
 
@@ -729,6 +984,27 @@ bool MainFrame::ReopenDatabase(const wxString& path, wxString* outError) {
         *outError = switchError;
     }
     return false;
+}
+
+void MainFrame::RefreshActiveTablePage() {
+    if (!dynamic_cast<TablePage*>(m_activeWorkspaceView) || !m_activeNavigationItem.IsOk()) {
+        return;
+    }
+
+    const auto* data =
+        dynamic_cast<const NavigationItemData*>(m_navigationTree->GetItemData(m_activeNavigationItem));
+    if (!data || !data->IsPage()) {
+        return;
+    }
+
+    wxWindow* const refreshedView = CreateNavigationPage(data->PageTitle(), false);
+    if (!refreshedView || !SetWorkspaceView(refreshedView)) {
+        if (refreshedView) {
+            refreshedView->Destroy();
+        }
+        ShowDatabaseError(this, "Refresh Error",
+                          "The active table could not be refreshed. Its existing view was kept.");
+    }
 }
 
 void MainFrame::UpdateTitle() {

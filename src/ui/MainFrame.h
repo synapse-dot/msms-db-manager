@@ -1,6 +1,8 @@
 #ifndef MSMS_MAIN_FRAME_H
 #define MSMS_MAIN_FRAME_H
 
+#include <optional>
+
 #include <wx/frame.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
@@ -37,7 +39,13 @@ private:
     void OnNavigationSelectionChanging(wxTreeEvent& event);
     [[nodiscard]] bool NavigateToNavigationItem(const wxTreeItemId& item);
     [[nodiscard]] bool ConfirmLeaveActiveForm();
-    [[nodiscard]] wxWindow* CreateNavigationPage(const wxString& pageTitle, bool formPage);
+    [[nodiscard]] wxWindow* CreateNavigationPage(
+        const wxString& pageTitle, bool formPage,
+        const std::optional<wxString>& recordKey = std::nullopt);
+    [[nodiscard]] wxWindow* CreateRecordTablePage(const wxString& pageTitle);
+    [[nodiscard]] bool OpenFormFromTable(
+        const wxString& formTitle, const std::optional<wxString>& recordKey);
+    void RefreshActiveTablePage();
     // Replacing the current view destroys the previous workspace child. This is
     // private so workspace navigation must pass through the tree controller.
     bool SetWorkspaceView(wxWindow* view);
@@ -60,6 +68,9 @@ private:
     wxBoxSizer* m_workspaceSizer{nullptr};
     wxWindow* m_activeWorkspaceView{nullptr};
     wxTreeItemId m_activeNavigationItem;
+    bool m_pendingFormOpen{false};
+    wxString m_pendingFormTitle;
+    std::optional<wxString> m_pendingFormRecordKey;
 };
 
 } // namespace msms
