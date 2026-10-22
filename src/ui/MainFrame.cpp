@@ -312,6 +312,9 @@ bool MainFrame::ConfirmLeaveActiveForm() {
     auto* saveButton = new wxButton(&dialog, wxID_SAVE, "Save");
     auto* discardButton = new wxButton(&dialog, wxID_NO, "Discard");
     auto* cancelButton = new wxButton(&dialog, wxID_CANCEL, "Cancel");
+    saveButton->Bind(wxEVT_BUTTON, [&dialog](wxCommandEvent&) { dialog.EndModal(wxID_SAVE); });
+    discardButton->Bind(wxEVT_BUTTON, [&dialog](wxCommandEvent&) { dialog.EndModal(wxID_NO); });
+    cancelButton->Bind(wxEVT_BUTTON, [&dialog](wxCommandEvent&) { dialog.EndModal(wxID_CANCEL); });
     cancelButton->SetDefault();
     buttons->Add(saveButton, 0, wxRIGHT, 8);
     buttons->Add(discardButton, 0, wxRIGHT, 8);
