@@ -17,7 +17,9 @@ MainFrame::MainFrame(DbService& dbService)
 void MainFrame::UpdateTitle() {
     if (m_dbService.IsOpen()) {
         wxFileName fn(m_dbService.GetDbPath());
-        SetTitle(wxString::Format("MSMS Manager — %s", fn.GetFullName()));
+        // Avoid wxString::Format here: it crashes in the current wxWidgets build while
+        // converting the format string. Concatenation is sufficient for a filename title.
+        SetTitle(wxString::FromUTF8("MSMS Manager — ") + fn.GetFullName());
     } else {
         SetTitle("MSMS Manager");
     }
