@@ -457,53 +457,71 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
 
 bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
     if (!IsOpen()) {
-        if (outError)
-            *outError = "Active database is not open.";
-        return false;
-    }
-
-    // 1. Verify candidate backup database
-    DbService backupChecker;
-    if (!backupChecker.Open(backupPath, outError)) {
-        return false;
-    }
-    if (!backupChecker.CheckIntegrity(outError)) {
-        return false;
-    }
-    if (!backupChecker.CheckCompatibility(outError)) {
-        return false;
-    }
-    backupChecker.Close();
-
-    // 2. Prepare timestamped safety copy alongside working database
-    wxFileName currentFn(m_dbPath);
-    wxString timestamp = wxDateTime::Now().Format("%Y%m%d_%H%M%S");
-    wxString safetyPath = wxString::Format("%s/%s.backup.%s", currentFn.GetPath(),
-                                           currentFn.GetFullName(), timestamp);
-
-    wxString currentDbPath = m_dbPath;
-
-    // Create safety copy via online backup
-    if (!BackupTo(safetyPath, outError)) {
         if (outError) {
-            *outError = wxString::Format("Failed to create safety backup: %s", *outError);
+            *outError = "Active database is not open.";
         }
         return false;
     }
 
-    // 3. Close active database for atomic replace
+    if (!wxFileExists(backupPath)) {
+        if (outError) {
+            *outError = wxString::Format("Backup file does not exist: %s", backupPath);
+        }
+        return false;
+    }
+
+    // 1. Validate backupPath with integrity_check and table compatibility check
+    DbService backupChecker;
+    if (!backupChecker.Open(backupPath, outError)) {
+        if (outError) {
+            *outError =
+                wxString::Format("Candidate backup validation failed on open: %s", *outError);
+        }
+        return false;
+    }
+    if (!backupChecker.CheckIntegrity(outError)) {
+        if (outError) {
+            *outError = wxString::Format("Candidate backup failed integrity check: %s", *outError);
+        }
+        return false;
+    }
+    if (!backupChecker.CheckCompatibility(outError)) {
+        if (outError) {
+            *outError =
+                wxString::Format("Candidate backup failed compatibility check: %s", *outError);
+        }
+        return false;
+    }
+    backupChecker.Close();
+
+    // 2. Write timestamped safety copy of current active database alongside working database
+    wxFileName currentFn(m_dbPath);
+    currentFn.Normalize(wxPATH_NORM_ABSOLUTE);
+    const wxString timestamp = wxDateTime::Now().Format("%Y%m%d_%H%M%S");
+    const wxString safetyPath =
+        currentFn.GetPathWithSep() + currentFn.GetFullName() + ".backup." + timestamp;
+    const wxString currentDbPath = m_dbPath;
+
+    if (!BackupTo(safetyPath, outError)) {
+        if (outError) {
+            *outError = wxString::Format("Failed to create timestamped safety copy: %s", *outError);
+        }
+        return false;
+    }
+
+    // 3. Atomically replace database using temporary file and atomic rename
     Close();
 
-    wxString tempPath = wxString::Format("%s.tmp_restore", currentDbPath);
+    const wxString tempPath = currentFn.GetPathWithSep() + currentFn.GetFullName() + ".tmp_restore";
     if (wxFileExists(tempPath)) {
         wxRemoveFile(tempPath);
     }
 
     if (!wxCopyFile(backupPath, tempPath)) {
         if (outError) {
-            *outError = "Failed to copy backup file to temporary location.";
+            *outError = "Failed to copy backup file to temporary restore file.";
         }
-        // Reopen current database
+        // Attempt to reopen current working database
         Open(currentDbPath, nullptr);
         return false;
     }
@@ -512,13 +530,19 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
         if (outError) {
             *outError = "Atomic rename of temporary file to working database failed.";
         }
-        wxRemoveFile(tempPath);
+        if (wxFileExists(tempPath)) {
+            wxRemoveFile(tempPath);
+        }
+        // Attempt to reopen current working database
         Open(currentDbPath, nullptr);
         return false;
     }
 
-    // 4. Reopen and verify working database
+    // 4. Reopen connection and verify PRAGMA foreign_keys = ON
     if (!Open(currentDbPath, outError)) {
+        if (outError) {
+            *outError = wxString::Format("Failed to reopen database after restore: %s", *outError);
+        }
         return false;
     }
 
