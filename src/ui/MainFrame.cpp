@@ -57,6 +57,33 @@ private:
     std::optional<NavigationPageType> m_pageType;
 };
 
+class BlankNavigationForm final : public wxPanel, public INavigationForm {
+public:
+    BlankNavigationForm(wxWindow* parent, const wxString& pageTitle)
+        : wxPanel(parent, wxID_ANY) {
+        auto* layout = new wxBoxSizer(wxVERTICAL);
+
+        auto* title = new wxStaticText(this, wxID_ANY, pageTitle);
+        wxFont titleFont = title->GetFont();
+        titleFont.SetWeight(wxFONTWEIGHT_BOLD);
+        titleFont.SetPointSize(titleFont.GetPointSize() + 2);
+        title->SetFont(titleFont);
+
+        auto* mode = new wxStaticText(
+            this, wxID_ANY,
+            "Create mode — blank form. Fields will be provided by the feature-specific form view.");
+        mode->Wrap(480);
+
+        layout->Add(title, 0, wxALL, 16);
+        layout->Add(mode, 0, wxLEFT | wxRIGHT | wxBOTTOM, 16);
+        SetSizer(layout);
+    }
+
+    [[nodiscard]] bool IsDirty() const override { return false; }
+    bool Save(wxString* /*outError*/) override { return true; }
+    void DiscardChanges() override {}
+};
+
 // Return the sizer that directly owns window, searching nested sizers too.
 wxSizer* FindContainingSizer(wxSizer* sizer, wxWindow* window) {
     if (!sizer || !window) {
@@ -128,7 +155,8 @@ MainFrame::MainFrame(DbService& dbService)
     SetSizer(frameSizer);
 
     BuildMenuBar();
-    m_navigationTree->Bind(wxEVT_TREE_SEL_CHANGED, &MainFrame::OnNavigationSelection, this);
+    m_navigationTree->Bind(wxEVT_TREE_SEL_CHANGING,
+                           &MainFrame::OnNavigationSelectionChanging, this);
 
     BuildNavigationTree();
     UpdateTitle();
@@ -215,22 +243,117 @@ void MainFrame::BuildNavigationTree() {
     ShowPlaceholderPage("All Members");
 }
 
-void MainFrame::OnNavigationSelection(wxTreeEvent& event) {
+void MainFrame::OnNavigationSelectionChanging(wxTreeEvent& event) {
     const wxTreeItemId item = event.GetItem();
     if (!item.IsOk()) {
-        event.Skip();
+        event.Veto();
         return;
     }
 
     const auto* data = dynamic_cast<const NavigationItemData*>(m_navigationTree->GetItemData(item));
-    if (data && data->IsPage()) {
-        ShowPlaceholderPage(data->PageTitle());
+    if (!data || !data->IsPage()) {
+        // Categories may expand or collapse, but only page items change the workspace.
+        event.Skip();
+        return;
     }
 
+    if (item == m_activeNavigationItem && m_activeWorkspaceView) {
+        event.Skip();
+        return;
+    }
+
+    if (!ConfirmLeaveActiveForm()) {
+        event.Veto();
+        return;
+    }
+
+    const auto pageType = data->PageType();
+    const bool formPage =
+        pageType && (*pageType == NavigationPageType::Form ||
+                     *pageType == NavigationPageType::RelationshipForm);
+    wxWindow* const view = CreateNavigationPage(data->PageTitle(), formPage);
+    if (!view || !SetWorkspaceView(view)) {
+        if (view) {
+            view->Destroy();
+        }
+        event.Veto();
+        ShowDatabaseError(this, "Navigation Error",
+                          "The selected page could not be opened. The current page was kept.");
+        return;
+    }
+
+    m_activeNavigationItem = item;
     event.Skip();
 }
 
-void MainFrame::ShowPlaceholderPage(const wxString& pageTitle) {
+bool MainFrame::ConfirmLeaveActiveForm() {
+    auto* form = dynamic_cast<INavigationForm*>(m_activeWorkspaceView);
+    if (!form || !form->IsDirty()) {
+        return true;
+    }
+
+    wxDialog dialog(this, wxID_ANY, "Unsaved Changes", wxDefaultPosition, wxDefaultSize,
+                    wxDEFAULT_DIALOG_STYLE);
+    auto* layout = new wxBoxSizer(wxVERTICAL);
+    auto* message = new wxStaticText(
+        &dialog, wxID_ANY,
+        "This form has unsaved changes. Save them before leaving, discard them, or cancel navigation.");
+    message->Wrap(420);
+    layout->Add(message, 0, wxALL, 14);
+
+    auto* buttons = new wxBoxSizer(wxHORIZONTAL);
+    auto* saveButton = new wxButton(&dialog, wxID_SAVE, "Save");
+    auto* discardButton = new wxButton(&dialog, wxID_NO, "Discard");
+    auto* cancelButton = new wxButton(&dialog, wxID_CANCEL, "Cancel");
+    cancelButton->SetDefault();
+    buttons->Add(saveButton, 0, wxRIGHT, 8);
+    buttons->Add(discardButton, 0, wxRIGHT, 8);
+    buttons->Add(cancelButton, 0);
+    layout->Add(buttons, 0, wxALIGN_RIGHT | wxLEFT | wxRIGHT | wxBOTTOM, 14);
+
+    dialog.SetSizerAndFit(layout);
+    dialog.CentreOnParent();
+
+    const int result = dialog.ShowModal();
+    if (result == wxID_SAVE) {
+        wxString error;
+        if (!form->Save(&error)) {
+            if (error.IsEmpty()) {
+                error = "The form could not be saved.";
+            }
+            ShowDatabaseError(this, "Save Error", error);
+            return false;
+        }
+        if (form->IsDirty()) {
+            ShowDatabaseError(
+                this, "Save Error",
+                "The form still reports unsaved changes after saving. Navigation was cancelled.");
+            return false;
+        }
+        return true;
+    }
+
+    if (result == wxID_NO) {
+        form->DiscardChanges();
+        if (form->IsDirty()) {
+            ShowDatabaseError(
+                this, "Discard Error",
+                "The form still reports unsaved changes after discard. Navigation was cancelled.");
+            return false;
+        }
+        return true;
+    }
+
+    return false;
+}
+
+wxWindow* MainFrame::CreateNavigationPage(const wxString& pageTitle, bool formPage) {
+    if (formPage) {
+        // Forms are always entered as a new, clean record. A real form view can
+        // replace this placeholder while implementing INavigationForm.
+        return new BlankNavigationForm(m_workspacePanel, pageTitle);
+    }
+
     auto* view = new wxPanel(m_workspacePanel, wxID_ANY);
     auto* viewSizer = new wxBoxSizer(wxVERTICAL);
 
@@ -246,10 +369,7 @@ void MainFrame::ShowPlaceholderPage(const wxString& pageTitle) {
     viewSizer->Add(title, 0, wxALL, 16);
     viewSizer->Add(description, 0, wxLEFT | wxRIGHT | wxBOTTOM, 16);
     view->SetSizer(viewSizer);
-
-    if (!SetWorkspaceView(view)) {
-        view->Destroy();
-    }
+    return view;
 }
 
 bool MainFrame::SetWorkspaceView(wxWindow* view) {
