@@ -23,7 +23,7 @@ void TablePage::BuildControls() {
     m_search->SetDescriptiveText("Search…");
     controls->Add(m_search, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
 
-    if (!m_options.filterOptions.empty()) {
+    if (m_options.showFilter || !m_options.filterOptions.empty()) {
         std::vector<wxString> labels;
         labels.reserve(m_options.filterOptions.size() + 1);
         labels.push_back(m_options.allFilterLabel);
@@ -141,9 +141,17 @@ void TablePage::OnNew(wxCommandEvent& /*event*/) {
 }
 
 void TablePage::OnEdit(wxCommandEvent& /*event*/) {
-    const auto id = SelectedId();
-    if (id && m_options.onEdit) {
-        m_options.onEdit(*id);
+    const long selected =
+        m_table->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
+    if (selected == -1 || static_cast<std::size_t>(selected) >= m_visibleRows.size()) {
+        return;
+    }
+
+    const TableRow& row = m_rows[m_visibleRows[static_cast<std::size_t>(selected)]];
+    if (!row.recordKey.IsEmpty() && m_options.onEditKey) {
+        m_options.onEditKey(row.recordKey);
+    } else if (m_options.onEdit) {
+        m_options.onEdit(row.id);
     }
 }
 
