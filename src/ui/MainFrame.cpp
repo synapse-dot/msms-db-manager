@@ -1,10 +1,12 @@
 #include "MainFrame.h"
 
+#include <utility>
+
+#include <wx/filename.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/treectrl.h>
-#include <wx/filename.h>
 
 #include "db/DbService.h"
 
