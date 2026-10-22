@@ -26,6 +26,30 @@ private:
     bool m_isPage;
 };
 
+// Return the sizer that directly owns window, searching nested sizers too.
+// wxSizer::Detach(window) only detaches an item from that sizer, so finding the
+// actual owner prevents an ancestor sizer from continuing to manage the window.
+wxSizer* FindContainingSizer(wxSizer* sizer, wxWindow* window) {
+    if (!sizer || !window) {
+        return nullptr;
+    }
+
+    for (wxSizerItemList::compatibility_iterator node = sizer->GetChildren().GetFirst(); node;
+         node = node->GetNext()) {
+        wxSizerItem* item = node->GetData();
+        if (item->GetWindow() == window) {
+            return sizer;
+        }
+        if (item->IsSizer()) {
+            if (wxSizer* owner = FindContainingSizer(item->GetSizer(), window)) {
+                return owner;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
 } // namespace
 
 MainFrame::MainFrame(DbService& dbService)
@@ -157,11 +181,28 @@ bool MainFrame::SetWorkspaceView(wxWindow* view) {
         return true;
     }
 
-    // Reparent before replacing the current view, so a failed reparent leaves
-    // the visible workspace intact.
-    if (view && view->GetParent() != m_workspacePanel &&
-        !view->Reparent(m_workspacePanel)) {
+    wxWindow* const previousParent = view ? view->GetParent() : nullptr;
+    wxSizer* const previousSizer =
+        (view && previousParent) ? FindContainingSizer(previousParent->GetSizer(), view) : nullptr;
+
+    // Reparent first so a failure leaves the existing layout untouched. Once it
+    // succeeds, detach the view from its former sizer so that sizer cannot keep
+    // positioning it after it moves into the workspace.
+    if (view && previousParent != m_workspacePanel && !view->Reparent(m_workspacePanel)) {
         return false;
+    }
+
+    // Detach before Clear(true): the incoming view may already be registered
+    // with the workspace sizer, and Clear(true) would otherwise destroy it.
+    if (previousSizer && !previousSizer->Detach(view)) {
+        if (previousParent && view->GetParent() != previousParent) {
+            view->Reparent(previousParent);
+        }
+        return false;
+    }
+
+    if (previousParent && previousParent != m_workspacePanel) {
+        previousParent->Layout();
     }
 
     m_workspaceSizer->Clear(true);
