@@ -61,6 +61,7 @@ private:
 
     TablePageOptions m_options;
     std::vector<TableRow> m_rows;
+    std::vector<std::size_t> m_visibleRows;
     wxSearchCtrl* m_search{nullptr};
     wxChoice* m_filter{nullptr};
     wxButton* m_editButton{nullptr};
