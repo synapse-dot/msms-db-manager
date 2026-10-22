@@ -12,6 +12,16 @@ namespace msms {
 
 class DbService;
 
+// Implement this interface on workspace form views so navigation can protect
+// dirty state without depending on a specific form implementation.
+class INavigationForm {
+public:
+    virtual ~INavigationForm() = default;
+    [[nodiscard]] virtual bool IsDirty() const = 0;
+    virtual bool Save(wxString* outError = nullptr) = 0;
+    virtual void DiscardChanges() = 0;
+};
+
 class MainFrame : public wxFrame {
 public:
     explicit MainFrame(DbService& dbService);
@@ -21,15 +31,16 @@ public:
 
     [[nodiscard]] wxPanel* GetWorkspacePanel() const noexcept { return m_workspacePanel; }
 
-    // The view must be a wxWindow. It is reparented into the workspace when possible;
-    // replacing a view destroys the previous workspace child.
-    bool SetWorkspaceView(wxWindow* view);
-
 private:
     void BuildMenuBar();
     void BuildNavigationTree();
-    void OnNavigationSelection(wxTreeEvent& event);
-    void ShowPlaceholderPage(const wxString& pageTitle);
+    void OnNavigationSelectionChanging(wxTreeEvent& event);
+    [[nodiscard]] bool NavigateToNavigationItem(const wxTreeItemId& item);
+    [[nodiscard]] bool ConfirmLeaveActiveForm();
+    [[nodiscard]] wxWindow* CreateNavigationPage(const wxString& pageTitle, bool formPage);
+    // Replacing the current view destroys the previous workspace child. This is
+    // private so workspace navigation must pass through the tree controller.
+    bool SetWorkspaceView(wxWindow* view);
 
     void OnOpenDatabase(wxCommandEvent& event);
     void OnCreateNewDatabase(wxCommandEvent& event);
@@ -48,6 +59,7 @@ private:
     wxTreeCtrl* m_navigationTree{nullptr};
     wxBoxSizer* m_workspaceSizer{nullptr};
     wxWindow* m_activeWorkspaceView{nullptr};
+    wxTreeItemId m_activeNavigationItem;
 };
 
 } // namespace msms
