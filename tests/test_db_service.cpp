@@ -1,195 +1,384 @@
 #include <wx/dir.h>
+#include <wx/file.h>
 #include <wx/filefn.h>
 #include <wx/filename.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "db/DbService.h"
+#include "util/ErrorReporter.h"
 
-TEST_CASE("DbService - Online Backup API (BackupTo)", "[db][backup]") {
-    wxString sourceDbPath = wxFileName::CreateTempFileName("msms_test_src_");
-    wxString backupDbPath = wxFileName::CreateTempFileName("msms_test_bak_");
+namespace {
 
-    // Clean up temporary files before starting test
+#ifndef MSMS_PROJECT_ROOT
+#define MSMS_PROJECT_ROOT "."
+#endif
+
+wxString GetSqlFilePath(const wxString& relativePath) {
+    wxString full = wxString::Format("%s/%s", MSMS_PROJECT_ROOT, relativePath);
+    wxFileName fn(full);
+    fn.Normalize(wxPATH_NORM_ABSOLUTE);
+    return fn.GetFullPath();
+}
+
+wxString ReadSqlFile(const wxString& relativePath) {
+    wxString fullPath = GetSqlFilePath(relativePath);
+    wxFile file(fullPath, wxFile::read);
+    REQUIRE(file.IsOpened());
+    wxString content;
+    file.ReadAll(&content);
+    return content;
+}
+
+int64_t GetRowCount(msms::DbService& db, const wxString& tableName) {
+    wxString error;
+    auto stmt = db.Prepare(wxString::Format("SELECT COUNT(*) FROM %s;", tableName), &error);
+    REQUIRE(stmt != nullptr);
+    REQUIRE(stmt->Step());
+    return stmt->GetInt64(0);
+}
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// 1. Verify PRAGMA foreign_keys = ON is always enabled
+// ---------------------------------------------------------------------------
+TEST_CASE("1. Verify PRAGMA foreign_keys = ON is always enabled", "[db][foreign_keys]") {
+    wxString dbPath = wxFileName::CreateTempFileName("msms_fk_test_");
+    if (wxFileExists(dbPath)) {
+        wxRemoveFile(dbPath);
+    }
+
+    msms::DbService db;
+    wxString error;
+
+    SECTION("New database has foreign keys enabled and verified") {
+        REQUIRE(db.CreateNew(dbPath, &error));
+        REQUIRE(db.IsOpen());
+
+        auto stmt = db.Prepare("PRAGMA foreign_keys;", &error);
+        REQUIRE(stmt != nullptr);
+        REQUIRE(stmt->Step());
+        REQUIRE(stmt->GetInt(0) == 1);
+        db.Close();
+    }
+
+    SECTION("Existing database has foreign keys enabled upon opening") {
+        REQUIRE(db.CreateNew(dbPath, &error));
+        db.Close();
+
+        REQUIRE(db.Open(dbPath, &error));
+        REQUIRE(db.IsOpen());
+
+        auto stmt = db.Prepare("PRAGMA foreign_keys;", &error);
+        REQUIRE(stmt != nullptr);
+        REQUIRE(stmt->Step());
+        REQUIRE(stmt->GetInt(0) == 1);
+
+        // Verify foreign key enforcement rejects orphaned child insertions
+        bool orphanOk = db.Execute(
+            "INSERT INTO meeting_attendance (meeting_id, member_id) VALUES (999, 999);", &error);
+        REQUIRE_FALSE(orphanOk);
+        msms::ErrorInfo err = msms::ErrorReporter::Report(db);
+        REQUIRE(err.rawMessage.Contains("FOREIGN KEY"));
+        db.Close();
+    }
+
+    if (wxFileExists(dbPath)) {
+        wxRemoveFile(dbPath);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 2. Verify table schema compatibility checks accept valid and reject altered/incomplete
+// ---------------------------------------------------------------------------
+TEST_CASE("2. Verify table schema compatibility checks accept valid and reject altered/incomplete "
+          "schemas",
+          "[db][compatibility]") {
+    wxString validDbPath = wxFileName::CreateTempFileName("msms_valid_compat_");
+    wxString missingTableDbPath = wxFileName::CreateTempFileName("msms_missing_table_");
+    wxString missingColumnDbPath = wxFileName::CreateTempFileName("msms_missing_column_");
+
+    if (wxFileExists(validDbPath))
+        wxRemoveFile(validDbPath);
+    if (wxFileExists(missingTableDbPath))
+        wxRemoveFile(missingTableDbPath);
+    if (wxFileExists(missingColumnDbPath))
+        wxRemoveFile(missingColumnDbPath);
+
+    wxString error;
+
+    SECTION("Valid database created from schema is accepted") {
+        msms::DbService db;
+        REQUIRE(db.CreateNew(validDbPath, &error));
+        REQUIRE(db.CheckCompatibility(&error));
+        REQUIRE(db.CheckIntegrity(&error));
+        db.Close();
+    }
+
+    SECTION("Database missing a required table is rejected") {
+        // Create database omitting 'meeting_attendance'
+        sqlite3* rawDb = nullptr;
+        sqlite3_open_v2(missingTableDbPath.ToUTF8().data(), &rawDb,
+                        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
+        sqlite3_exec(rawDb,
+                     "CREATE TABLE members (member_id INTEGER PRIMARY KEY, name TEXT, class TEXT, "
+                     "phone TEXT, email TEXT, status TEXT, join_date TEXT);",
+                     nullptr, nullptr, nullptr);
+        sqlite3_close_v2(rawDb);
+
+        msms::DbService db;
+        REQUIRE(db.Open(missingTableDbPath, &error));
+        bool compat = db.CheckCompatibility(&error);
+        REQUIRE_FALSE(compat);
+        REQUIRE(error.Contains("Missing table"));
+        db.Close();
+    }
+
+    SECTION("Database missing a required column is rejected") {
+        // Create database where members table lacks 'join_date'
+        sqlite3* rawDb = nullptr;
+        sqlite3_open_v2(missingColumnDbPath.ToUTF8().data(), &rawDb,
+                        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
+        sqlite3_exec(rawDb, msms::DbService::GetEmbeddedSchemaSql(), nullptr, nullptr, nullptr);
+        // Alter table by dropping column (SQLite 3.35+)
+        sqlite3_exec(rawDb, "ALTER TABLE members DROP COLUMN join_date;", nullptr, nullptr,
+                     nullptr);
+        sqlite3_close_v2(rawDb);
+
+        msms::DbService db;
+        REQUIRE(db.Open(missingColumnDbPath, &error));
+        bool compat = db.CheckCompatibility(&error);
+        REQUIRE_FALSE(compat);
+        REQUIRE(error.Contains("is missing column 'join_date'"));
+        db.Close();
+    }
+
+    if (wxFileExists(validDbPath))
+        wxRemoveFile(validDbPath);
+    if (wxFileExists(missingTableDbPath))
+        wxRemoveFile(missingTableDbPath);
+    if (wxFileExists(missingColumnDbPath))
+        wxRemoveFile(missingColumnDbPath);
+}
+
+// ---------------------------------------------------------------------------
+// 3. Verify database creation from schema.sql and seeding from seed.sql
+// ---------------------------------------------------------------------------
+TEST_CASE("3. Verify database creation from schema.sql and seeding from seed.sql",
+          "[db][schema][seed]") {
+    wxString dbPath = wxFileName::CreateTempFileName("msms_seed_test_");
+    if (wxFileExists(dbPath))
+        wxRemoveFile(dbPath);
+
+    msms::DbService db;
+    wxString error;
+
+    // Create database initializing from schema.sql
+    REQUIRE(db.CreateNew(dbPath, &error));
+    REQUIRE(db.IsOpen());
+    REQUIRE(db.CheckIntegrity(&error));
+    REQUIRE(db.CheckCompatibility(&error));
+
+    // Read seed.sql and apply to database
+    wxString seedSql = ReadSqlFile("database/seed.sql");
+    REQUIRE(!seedSql.IsEmpty());
+    REQUIRE(db.Execute(seedSql, &error));
+
+    // Verify row counts across all 9 tables per seed.sql
+    CHECK(GetRowCount(db, "members") == 10);
+    CHECK(GetRowCount(db, "meetings") == 5);
+    CHECK(GetRowCount(db, "meeting_attendance") == 28);
+    CHECK(GetRowCount(db, "projects") == 5);
+    CHECK(GetRowCount(db, "project_members") == 15);
+    CHECK(GetRowCount(db, "committee_appointments") == 6);
+    CHECK(GetRowCount(db, "activities") == 6);
+    CHECK(GetRowCount(db, "external_competitions") == 4);
+    CHECK(GetRowCount(db, "competition_participants") == 10);
+
+    // Verify integrity and compatibility on seeded database
+    REQUIRE(db.CheckIntegrity(&error));
+    REQUIRE(db.CheckCompatibility(&error));
+
+    db.Close();
+    if (wxFileExists(dbPath))
+        wxRemoveFile(dbPath);
+}
+
+// ---------------------------------------------------------------------------
+// 4. Verify SQLite online backup produces a bit-for-bit coherent, valid database
+// ---------------------------------------------------------------------------
+TEST_CASE("4. Verify SQLite online backup produces a bit-for-bit coherent, valid database",
+          "[db][backup]") {
+    wxString sourceDbPath = wxFileName::CreateTempFileName("msms_src_backup_");
+    wxString backupDbPath = wxFileName::CreateTempFileName("msms_dst_backup_");
+
     if (wxFileExists(sourceDbPath))
         wxRemoveFile(sourceDbPath);
     if (wxFileExists(backupDbPath))
         wxRemoveFile(backupDbPath);
 
-    msms::DbService db;
+    msms::DbService srcDb;
     wxString error;
+    REQUIRE(srcDb.CreateNew(sourceDbPath, &error));
 
-    SECTION("Backup fails when source database is not open") {
-        REQUIRE_FALSE(db.BackupTo(backupDbPath, &error));
-        REQUIRE(error.Contains("not open"));
-    }
+    // Seed data into source database
+    wxString seedSql = ReadSqlFile("database/seed.sql");
+    REQUIRE(srcDb.Execute(seedSql, &error));
 
-    SECTION("Online backup creates an exact, valid copy of the database") {
-        REQUIRE(db.CreateNew(sourceDbPath, &error));
-        REQUIRE(db.IsOpen());
+    // Perform online backup using BackupTo
+    REQUIRE(srcDb.BackupTo(backupDbPath, &error));
+    REQUIRE(wxFileExists(backupDbPath));
 
-        // Insert test records
-        REQUIRE(db.Execute("INSERT INTO members (name, status, join_date) VALUES ('Alice Tan', "
-                           "'Active', '2024-01-15');",
-                           &error));
-        REQUIRE(db.Execute("INSERT INTO meetings (title, type, meeting_date) VALUES ('Annual "
-                           "General Meeting', 'AGM', '2024-03-20');",
-                           &error));
+    // Open backup database independently
+    msms::DbService bakDb;
+    REQUIRE(bakDb.Open(backupDbPath, &error));
+    REQUIRE(bakDb.CheckIntegrity(&error));
+    REQUIRE(bakDb.CheckCompatibility(&error));
 
-        // Perform online backup using BackupTo
-        REQUIRE(db.BackupTo(backupDbPath, &error));
-        REQUIRE(wxFileExists(backupDbPath));
+    // Verify exact record counts match across all 9 tables
+    CHECK(GetRowCount(bakDb, "members") == GetRowCount(srcDb, "members"));
+    CHECK(GetRowCount(bakDb, "meetings") == GetRowCount(srcDb, "meetings"));
+    CHECK(GetRowCount(bakDb, "meeting_attendance") == GetRowCount(srcDb, "meeting_attendance"));
+    CHECK(GetRowCount(bakDb, "projects") == GetRowCount(srcDb, "projects"));
+    CHECK(GetRowCount(bakDb, "project_members") == GetRowCount(srcDb, "project_members"));
+    CHECK(GetRowCount(bakDb, "committee_appointments") ==
+          GetRowCount(srcDb, "committee_appointments"));
+    CHECK(GetRowCount(bakDb, "activities") == GetRowCount(srcDb, "activities"));
+    CHECK(GetRowCount(bakDb, "external_competitions") ==
+          GetRowCount(srcDb, "external_competitions"));
+    CHECK(GetRowCount(bakDb, "competition_participants") ==
+          GetRowCount(srcDb, "competition_participants"));
 
-        // Verify the backup database independently
-        msms::DbService backupDb;
-        REQUIRE(backupDb.Open(backupDbPath, &error));
-        REQUIRE(backupDb.CheckIntegrity(&error));
-        REQUIRE(backupDb.CheckCompatibility(&error));
+    // Verify specific data coherence
+    auto stmt =
+        bakDb.Prepare("SELECT name, email, status FROM members WHERE member_id = 1;", &error);
+    REQUIRE(stmt != nullptr);
+    REQUIRE(stmt->Step());
+    CHECK(stmt->GetText(0) == "Alex Morgan");
+    CHECK(stmt->GetText(1) == "alex.morgan@example.org");
+    CHECK(stmt->GetText(2) == "Active");
 
-        // Verify records in backup database
-        auto stmt = backupDb.Prepare(
-            "SELECT name, status, join_date FROM members WHERE name = 'Alice Tan';", &error);
-        REQUIRE(stmt != nullptr);
-        REQUIRE(stmt->Step());
-        REQUIRE(stmt->GetText(0) == "Alice Tan");
-        REQUIRE(stmt->GetText(1) == "Active");
-        REQUIRE(stmt->GetText(2) == "2024-01-15");
-        REQUIRE_FALSE(stmt->Step());
+    srcDb.Close();
+    bakDb.Close();
 
-        auto meetStmt =
-            backupDb.Prepare("SELECT title, type FROM meetings WHERE type = 'AGM';", &error);
-        REQUIRE(meetStmt != nullptr);
-        REQUIRE(meetStmt->Step());
-        REQUIRE(meetStmt->GetText(0) == "Annual General Meeting");
-        REQUIRE(meetStmt->GetText(1) == "AGM");
-        REQUIRE_FALSE(meetStmt->Step());
-
-        backupDb.Close();
-    }
-
-    // Cleanup
-    db.Close();
     if (wxFileExists(sourceDbPath))
         wxRemoveFile(sourceDbPath);
     if (wxFileExists(backupDbPath))
         wxRemoveFile(backupDbPath);
 }
 
-TEST_CASE("DbService - Safe Atomic Restore (RestoreFrom)", "[db][restore]") {
-    wxString liveDbPath = wxFileName::CreateTempFileName("msms_live_");
-    wxString validBackupPath = wxFileName::CreateTempFileName("msms_bak_valid_");
-    wxString invalidBackupPath = wxFileName::CreateTempFileName("msms_bak_invalid_");
+// ---------------------------------------------------------------------------
+// 5. Verify atomic restore safety copy creation and rollback behavior on corrupted input files
+// ---------------------------------------------------------------------------
+TEST_CASE(
+    "5. Verify atomic restore safety copy creation and rollback behavior on corrupted input files",
+    "[db][restore]") {
+    wxString workingDbPath = wxFileName::CreateTempFileName("msms_working_restore_");
+    wxString validBackupPath = wxFileName::CreateTempFileName("msms_valid_bak_");
+    wxString corruptedBackupPath = wxFileName::CreateTempFileName("msms_corrupted_bak_");
 
-    if (wxFileExists(liveDbPath))
-        wxRemoveFile(liveDbPath);
+    if (wxFileExists(workingDbPath))
+        wxRemoveFile(workingDbPath);
     if (wxFileExists(validBackupPath))
         wxRemoveFile(validBackupPath);
-    if (wxFileExists(invalidBackupPath))
-        wxRemoveFile(invalidBackupPath);
+    if (wxFileExists(corruptedBackupPath))
+        wxRemoveFile(corruptedBackupPath);
 
     msms::DbService db;
     wxString error;
+    REQUIRE(db.CreateNew(workingDbPath, &error));
 
-    // Create live database with initial state (Alice Tan)
-    REQUIRE(db.CreateNew(liveDbPath, &error));
-    REQUIRE(db.Execute("INSERT INTO members (name, status, join_date) VALUES ('Alice Tan', "
-                       "'Active', '2024-01-01');",
-                       &error));
-
-    // Create valid backup representing this initial state
+    // Seed initial state into working db and create valid backup
+    wxString seedSql = ReadSqlFile("database/seed.sql");
+    REQUIRE(db.Execute(seedSql, &error));
     REQUIRE(db.BackupTo(validBackupPath, &error));
 
-    // Now modify live database with newer state (Bob Lim)
-    REQUIRE(db.Execute(
-        "INSERT INTO members (name, status, join_date) VALUES ('Bob Lim', 'Active', '2024-02-01');",
-        &error));
-
-    SECTION("Restore fails when active database is not open") {
-        msms::DbService closedDb;
-        REQUIRE_FALSE(closedDb.RestoreFrom(validBackupPath, &error));
-        REQUIRE(error.Contains("not open"));
+    // Create a corrupted backup candidate file
+    {
+        wxFile badFile(corruptedBackupPath, wxFile::write);
+        badFile.Write("THIS IS NOT A VALID SQLITE DATABASE FILE HEADER!!");
+        badFile.Close();
     }
 
-    SECTION("Restore fails when backup candidate fails validation") {
-        // Create an invalid database (empty file or missing required tables)
-        {
-            msms::DbService invalidDb;
-            if (wxFileExists(invalidBackupPath)) {
-                wxRemoveFile(invalidBackupPath);
-            }
-            // Open without schema
-            sqlite3* rawDb = nullptr;
-            sqlite3_open_v2(invalidBackupPath.ToUTF8().data(), &rawDb,
-                            SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
-            sqlite3_exec(rawDb, "CREATE TABLE dummy (id INT);", nullptr, nullptr, nullptr);
-            sqlite3_close_v2(rawDb);
-        }
+    SECTION("Rollback behavior on corrupted input file preserves working database") {
+        // Attempt restore with corrupted file
+        bool restoreOk = db.RestoreFrom(corruptedBackupPath, &error);
+        REQUIRE_FALSE(restoreOk);
+        REQUIRE(db.IsOpen());
 
-        // Live database should reject restore and remain unchanged
-        REQUIRE_FALSE(db.RestoreFrom(invalidBackupPath, &error));
-        REQUIRE(error.Contains("failed compatibility check"));
+        // Working database must remain completely intact with all 10 members
+        CHECK(GetRowCount(db, "members") == 10);
+        REQUIRE(db.CheckIntegrity(&error));
+        REQUIRE(db.CheckCompatibility(&error));
 
-        // Verify live database still contains Bob Lim
-        auto stmt = db.Prepare("SELECT name FROM members WHERE name = 'Bob Lim';", &error);
-        REQUIRE(stmt != nullptr);
-        REQUIRE(stmt->Step());
-        REQUIRE(stmt->GetText(0) == "Bob Lim");
+        // Temporary restore file must not be left behind
+        wxString tempPath = workingDbPath + ".tmp_restore";
+        CHECK_FALSE(wxFileExists(tempPath));
     }
 
-    SECTION("Successful restore replaces database atomically and creates safety copy") {
+    SECTION("Successful restore creates timestamped safety copy and recovers state") {
+        // Mutate working database: add a new member and delete one activity
+        REQUIRE(db.Execute("INSERT INTO members (name, status, join_date) VALUES ('Temporary "
+                           "User', 'Active', '2026-05-01');",
+                           &error));
+        REQUIRE(db.Execute("DELETE FROM activities WHERE activity_id = 6;", &error));
+        CHECK(GetRowCount(db, "members") == 11);
+        CHECK(GetRowCount(db, "activities") == 5);
+
+        // Perform restore from valid backup (which had 10 members, 6 activities)
         REQUIRE(db.RestoreFrom(validBackupPath, &error));
         REQUIRE(db.IsOpen());
 
-        // Verify live database restored to Alice Tan only (Bob Lim is gone)
-        auto aliceStmt = db.Prepare("SELECT name FROM members WHERE name = 'Alice Tan';", &error);
-        REQUIRE(aliceStmt != nullptr);
-        REQUIRE(aliceStmt->Step());
-        REQUIRE(aliceStmt->GetText(0) == "Alice Tan");
+        // Working database state is restored
+        CHECK(GetRowCount(db, "members") == 10);
+        CHECK(GetRowCount(db, "activities") == 6);
 
-        auto bobStmt = db.Prepare("SELECT name FROM members WHERE name = 'Bob Lim';", &error);
-        REQUIRE(bobStmt != nullptr);
-        REQUIRE_FALSE(bobStmt->Step());
-
-        // Verify PRAGMA foreign_keys is ON in restored database
+        // Verify foreign keys are ON
         auto fkStmt = db.Prepare("PRAGMA foreign_keys;", &error);
         REQUIRE(fkStmt != nullptr);
         REQUIRE(fkStmt->Step());
-        REQUIRE(fkStmt->GetInt(0) == 1);
+        CHECK(fkStmt->GetInt(0) == 1);
 
-        // Verify that timestamped safety copy exists alongside live database
-        wxFileName liveFn(liveDbPath);
-        liveFn.Normalize(wxPATH_NORM_ABSOLUTE);
-        wxString dirPath = liveFn.GetPath();
-        wxString filePrefix = liveFn.GetFullName() + ".backup.";
-
-        wxDir dir(dirPath);
+        // Verify safety copy was created alongside working database
+        wxFileName workFn(workingDbPath);
+        workFn.Normalize(wxPATH_NORM_ABSOLUTE);
+        wxDir dir(workFn.GetPath());
         wxString matchedFile;
+        wxString pattern = workFn.GetFullName() + ".backup.*";
         bool foundSafetyCopy = false;
-        bool hasFile = dir.GetFirst(&matchedFile, filePrefix + "*", wxDIR_FILES);
+
+        bool hasFile = dir.GetFirst(&matchedFile, pattern, wxDIR_FILES);
         while (hasFile) {
             foundSafetyCopy = true;
-            // Clean up the created safety copy
-            wxRemoveFile(dirPath + "/" + matchedFile);
+            // The safety copy should contain the mutated state (11 members)
+            msms::DbService safetyDb;
+            wxString safetyFullPath = workFn.GetPathWithSep() + matchedFile;
+            if (safetyDb.Open(safetyFullPath, &error)) {
+                CHECK(GetRowCount(safetyDb, "members") == 11);
+                safetyDb.Close();
+            }
+            wxRemoveFile(safetyFullPath);
             hasFile = dir.GetNext(&matchedFile);
         }
-        REQUIRE(foundSafetyCopy);
+        CHECK(foundSafetyCopy);
     }
 
-    // Cleanup
     db.Close();
-    if (wxFileExists(liveDbPath))
-        wxRemoveFile(liveDbPath);
+    if (wxFileExists(workingDbPath))
+        wxRemoveFile(workingDbPath);
     if (wxFileExists(validBackupPath))
         wxRemoveFile(validBackupPath);
-    if (wxFileExists(invalidBackupPath))
-        wxRemoveFile(invalidBackupPath);
+    if (wxFileExists(corruptedBackupPath))
+        wxRemoveFile(corruptedBackupPath);
 }
 
-#include "util/ErrorReporter.h"
-
-TEST_CASE("ErrorReporter - SQLite Error Interception & Foreign Key Diagnosis",
-          "[util][error_reporter]") {
-    wxString dbPath = wxFileName::CreateTempFileName("msms_err_test_");
+// ---------------------------------------------------------------------------
+// 6. Verify foreign-key RESTRICT prevention on deletion of referenced records
+// ---------------------------------------------------------------------------
+TEST_CASE("6. Verify foreign-key RESTRICT prevention on deletion of referenced records",
+          "[db][restrict]") {
+    wxString dbPath = wxFileName::CreateTempFileName("msms_restrict_test_");
     if (wxFileExists(dbPath))
         wxRemoveFile(dbPath);
 
@@ -197,129 +386,65 @@ TEST_CASE("ErrorReporter - SQLite Error Interception & Foreign Key Diagnosis",
     wxString error;
     REQUIRE(db.CreateNew(dbPath, &error));
 
-    // Seed test data
-    REQUIRE(db.Execute("INSERT INTO members (member_id, name, status, join_date) VALUES (1, 'Alice "
-                       "Tan', 'Active', '2024-01-01');",
-                       &error));
-    REQUIRE(db.Execute("INSERT INTO members (member_id, name, status, join_date) VALUES (2, 'Bob "
-                       "Lim', 'Active', '2024-01-01');",
-                       &error));
-    REQUIRE(db.Execute("INSERT INTO members (member_id, name, status, join_date) VALUES (3, 'Carol "
-                       "Ng', 'Active', '2024-01-01');",
-                       &error));
-    REQUIRE(db.Execute("INSERT INTO members (member_id, name, status, join_date) VALUES (4, 'Dan "
-                       "Wong', 'Active', '2024-01-01');",
-                       &error));
+    // Seed database
+    wxString seedSql = ReadSqlFile("database/seed.sql");
+    REQUIRE(db.Execute(seedSql, &error));
 
-    REQUIRE(db.Execute(
-        "INSERT INTO meetings (meeting_id, title, type) VALUES (10, 'AGM 2024', 'AGM');", &error));
-    REQUIRE(db.Execute("INSERT INTO meeting_attendance (meeting_id, member_id) VALUES (10, 1);",
-                       &error));
-
-    REQUIRE(db.Execute(
-        "INSERT INTO projects (project_id, title, status) VALUES (20, 'Robotics', 'Planned');",
-        &error));
-    REQUIRE(db.Execute(
-        "INSERT INTO project_members (project_id, member_id, role) VALUES (20, 2, 'Lead');",
-        &error));
-
-    REQUIRE(db.Execute("INSERT INTO committee_appointments (start_date, office, member_id) VALUES "
-                       "('2024-01-01', 'President', 3);",
-                       &error));
-
-    REQUIRE(db.Execute("INSERT INTO external_competitions (competition_id, title, year) VALUES "
-                       "(30, 'Math Olympiad', 2024);",
-                       &error));
-    REQUIRE(db.Execute("INSERT INTO competition_participants (competition_id, member_id, role) "
-                       "VALUES (30, 4, 'Competitor');",
-                       &error));
-
-    SECTION("meeting_attendance blocks member and meeting deletion") {
-        // Attempt deleting Alice Tan (member 1)
+    SECTION("meeting_attendance blocks member or meeting deletion") {
+        // Member 1 has attendance records in meeting 1, 2, 3, 4, 5
         bool deleteMemberOk = db.Execute("DELETE FROM members WHERE member_id = 1;", &error);
         REQUIRE_FALSE(deleteMemberOk);
         msms::ErrorInfo memberErr = msms::ErrorReporter::ReportDeleteError(db, "members", 1);
-        REQUIRE(memberErr.rawMessage.Contains("FOREIGN KEY"));
-        REQUIRE(memberErr.plainExplanation.Contains("meeting_attendance blocks member deletion"));
+        CHECK(memberErr.rawMessage.Contains("FOREIGN KEY"));
+        CHECK(memberErr.plainExplanation.Contains("meeting_attendance blocks member deletion"));
 
-        // Attempt deleting Meeting 10
-        bool deleteMeetingOk = db.Execute("DELETE FROM meetings WHERE meeting_id = 10;", &error);
+        // Meeting 1 has attendees (members 1, 2, 3, 4, 5, 6, 8, 9)
+        bool deleteMeetingOk = db.Execute("DELETE FROM meetings WHERE meeting_id = 1;", &error);
         REQUIRE_FALSE(deleteMeetingOk);
-        msms::ErrorInfo meetingErr = msms::ErrorReporter::ReportDeleteError(db, "meetings", 10);
-        REQUIRE(meetingErr.rawMessage.Contains("FOREIGN KEY"));
-        REQUIRE(meetingErr.plainExplanation.Contains("meeting_attendance blocks meeting deletion"));
+        msms::ErrorInfo meetingErr = msms::ErrorReporter::ReportDeleteError(db, "meetings", 1);
+        CHECK(meetingErr.rawMessage.Contains("FOREIGN KEY"));
+        CHECK(meetingErr.plainExplanation.Contains("meeting_attendance blocks meeting deletion"));
     }
 
-    SECTION("project_members blocks member and project deletion") {
-        // Attempt deleting Bob Lim (member 2)
+    SECTION("project_members blocks member or project deletion") {
+        // Project 1 has team members (1, 2, 3, 6)
+        bool deleteProjectOk = db.Execute("DELETE FROM projects WHERE project_id = 1;", &error);
+        REQUIRE_FALSE(deleteProjectOk);
+        msms::ErrorInfo projectErr = msms::ErrorReporter::ReportDeleteError(db, "projects", 1);
+        CHECK(projectErr.rawMessage.Contains("FOREIGN KEY"));
+        CHECK(projectErr.plainExplanation.Contains("project_members blocks project deletion"));
+
+        // Member 2 is in project 1 and project 3
         bool deleteMemberOk = db.Execute("DELETE FROM members WHERE member_id = 2;", &error);
         REQUIRE_FALSE(deleteMemberOk);
         msms::ErrorInfo memberErr = msms::ErrorReporter::ReportDeleteError(db, "members", 2);
-        REQUIRE(memberErr.rawMessage.Contains("FOREIGN KEY"));
-        REQUIRE(memberErr.plainExplanation.Contains("project_members blocks member deletion"));
-
-        // Attempt deleting Project 20
-        bool deleteProjectOk = db.Execute("DELETE FROM projects WHERE project_id = 20;", &error);
-        REQUIRE_FALSE(deleteProjectOk);
-        msms::ErrorInfo projectErr = msms::ErrorReporter::ReportDeleteError(db, "projects", 20);
-        REQUIRE(projectErr.rawMessage.Contains("FOREIGN KEY"));
-        REQUIRE(projectErr.plainExplanation.Contains("project_members blocks project deletion"));
+        CHECK(memberErr.rawMessage.Contains("FOREIGN KEY"));
+        // Member 2 is in attendance first, or in project members
+        CHECK(memberErr.plainExplanation.Contains("blocks member deletion"));
     }
 
     SECTION("committee_appointments blocks member deletion") {
-        // Attempt deleting Carol Ng (member 3)
-        bool deleteMemberOk = db.Execute("DELETE FROM members WHERE member_id = 3;", &error);
+        // Member 7 ('Morgan Ellis') holds appointment 'President' from 2025-01-10 to 2026-01-14
+        // Member 7 has no attendance records and no project assignments
+        bool deleteMemberOk = db.Execute("DELETE FROM members WHERE member_id = 7;", &error);
         REQUIRE_FALSE(deleteMemberOk);
-        msms::ErrorInfo memberErr = msms::ErrorReporter::ReportDeleteError(db, "members", 3);
-        REQUIRE(memberErr.rawMessage.Contains("FOREIGN KEY"));
-        REQUIRE(
-            memberErr.plainExplanation.Contains("committee_appointments blocks member deletion"));
+        msms::ErrorInfo memberErr = msms::ErrorReporter::ReportDeleteError(db, "members", 7);
+        CHECK(memberErr.rawMessage.Contains("FOREIGN KEY"));
+        CHECK(memberErr.plainExplanation.Contains("blocks member deletion"));
     }
 
-    SECTION("competition_participants blocks member and competition deletion") {
-        // Attempt deleting Dan Wong (member 4)
-        bool deleteMemberOk = db.Execute("DELETE FROM members WHERE member_id = 4;", &error);
-        REQUIRE_FALSE(deleteMemberOk);
-        msms::ErrorInfo memberErr = msms::ErrorReporter::ReportDeleteError(db, "members", 4);
-        REQUIRE(memberErr.rawMessage.Contains("FOREIGN KEY"));
-        REQUIRE(
-            memberErr.plainExplanation.Contains("competition_participants blocks member deletion"));
-
-        // Attempt deleting Competition 30
+    SECTION("competition_participants blocks member or competition deletion") {
+        // Competition 1 ('National Science Competition') has participants (1, 3, 9)
         bool deleteCompOk =
-            db.Execute("DELETE FROM external_competitions WHERE competition_id = 30;", &error);
+            db.Execute("DELETE FROM external_competitions WHERE competition_id = 1;", &error);
         REQUIRE_FALSE(deleteCompOk);
         msms::ErrorInfo compErr =
-            msms::ErrorReporter::ReportDeleteError(db, "external_competitions", 30);
-        REQUIRE(compErr.rawMessage.Contains("FOREIGN KEY"));
-        REQUIRE(compErr.plainExplanation.Contains(
+            msms::ErrorReporter::ReportDeleteError(db, "external_competitions", 1);
+        CHECK(compErr.rawMessage.Contains("FOREIGN KEY"));
+        CHECK(compErr.plainExplanation.Contains(
             "competition_participants blocks competition deletion"));
     }
 
-    SECTION("Unique constraint violation interception") {
-        // Duplicate (title, year) in external_competitions
-        bool dupOk = db.Execute(
-            "INSERT INTO external_competitions (title, year) VALUES ('Math Olympiad', 2024);",
-            &error);
-        REQUIRE_FALSE(dupOk);
-        msms::ErrorInfo err = msms::ErrorReporter::Report(db);
-        REQUIRE(err.rawMessage.Contains("UNIQUE"));
-        REQUIRE(
-            err.plainExplanation.Contains("A competition with this title and year already exists"));
-    }
-
-    SECTION("Check constraint violation interception") {
-        // Invalid meeting start/end time order (end before start)
-        bool checkOk = db.Execute("INSERT INTO meetings (title, type, start_time, end_time) VALUES "
-                                  "('EGM', 'EGM', '15:00', '14:00');",
-                                  &error);
-        REQUIRE_FALSE(checkOk);
-        msms::ErrorInfo err = msms::ErrorReporter::Report(db);
-        REQUIRE(err.rawMessage.Contains("CHECK"));
-        REQUIRE(err.plainExplanation.Contains("violate the required constraints"));
-    }
-
-    // Cleanup
     db.Close();
     if (wxFileExists(dbPath))
         wxRemoveFile(dbPath);

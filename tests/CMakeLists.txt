@@ -7,6 +7,9 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_db_service.cpp")
         Catch2::Catch2WithMain
         msms_db
     )
+    target_compile_definitions(test_db_service PRIVATE
+        MSMS_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+    )
     if(TARGET sqlite3_lib)
         target_link_libraries(test_db_service PRIVATE sqlite3_lib)
     endif()
