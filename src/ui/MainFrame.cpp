@@ -1,5 +1,6 @@
 #include "MainFrame.h"
 
+#include <optional>
 #include <utility>
 
 #include <wx/accel.h>
@@ -31,7 +32,6 @@ enum MenuItemId {
 };
 
 enum class NavigationPageType {
-    Category,
     Table,
     ScopedTable,
     Form,
@@ -40,18 +40,21 @@ enum class NavigationPageType {
 
 class NavigationItemData final : public wxTreeItemData {
 public:
+    // A missing page type identifies a category node.
+    explicit NavigationItemData(wxString title) : m_pageTitle(std::move(title)) {}
+
     NavigationItemData(wxString pageTitle, NavigationPageType pageType)
         : m_pageTitle(std::move(pageTitle)), m_pageType(pageType) {}
 
-    [[nodiscard]] bool IsPage() const noexcept {
-        return m_pageType != NavigationPageType::Category;
-    }
+    [[nodiscard]] bool IsPage() const noexcept { return m_pageType.has_value(); }
     [[nodiscard]] const wxString& PageTitle() const noexcept { return m_pageTitle; }
-    [[nodiscard]] NavigationPageType PageType() const noexcept { return m_pageType; }
+    [[nodiscard]] const std::optional<NavigationPageType>& PageType() const noexcept {
+        return m_pageType;
+    }
 
 private:
     wxString m_pageTitle;
-    NavigationPageType m_pageType;
+    std::optional<NavigationPageType> m_pageType;
 };
 
 // Return the sizer that directly owns window, searching nested sizers too.
@@ -166,7 +169,7 @@ void MainFrame::BuildNavigationTree() {
 
     const auto addCategory = [this, root](const wxString& title) {
         return m_navigationTree->AppendItem(
-            root, title, -1, -1, new NavigationItemData(title, NavigationPageType::Category));
+            root, title, -1, -1, new NavigationItemData(title));
     };
     const auto addPage = [this](const wxTreeItemId& parent, const wxString& title,
                                 NavigationPageType pageType) {
