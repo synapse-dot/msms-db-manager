@@ -112,6 +112,22 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/db/sqlite3.c")
     add_library(SQLite::SQLite3 ALIAS sqlite3_lib)
 endif()
 
+# Database service library target
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/db/DbService.cpp")
+    add_library(msms_db STATIC
+        src/db/DbService.cpp
+        src/db/DbService.h
+    )
+    target_include_directories(msms_db PUBLIC
+        src
+        src/db
+    )
+    target_link_libraries(msms_db PUBLIC
+        sqlite3_lib
+        wxWidgets::Base
+    )
+endif()
+
 # Application executable
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
     file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS
