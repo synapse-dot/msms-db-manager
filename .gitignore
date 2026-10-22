@@ -1,6 +1,9 @@
-# Build directories
-/build/
-/cmake-build-*/
+# Prerequisites & build directories
+build/
+bin/
+lib/
+cmake-build-*/
+out/
 
 # CMake generated files
 CMakeCache.txt
@@ -9,21 +12,47 @@ cmake_install.cmake
 Makefile
 *.cmake
 !CMakeLists.txt
+compile_commands.json
+CTestTestfile.cmake
+Testing/
 
-# Qt Autogen folders
-*_autogen/
-.qt/
+# C / C++ Compiled Objects and Libraries
+*.o
+*.obj
+*.so
+*.so.*
+*.dylib
+*.dll
+*.a
+*.lib
+*.exe
+*.out
+*.app
+*.d
 
-# IDEs and Editors (Neovim, VS Code, etc.)
+# SQLite database files and temporary/journal files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.backup.*
+
+# IDEs, text editors, and language tooling
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-.netrwhist
-
-# OS-specific files
+*.bak
 .DS_Store
 Thumbs.db
+.clangd/
+.cache/
+.netrwhist
 
-*.db
+# Packaging artifacts
+*.AppImage
+*.nsis
+*.exe
