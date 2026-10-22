@@ -890,6 +890,7 @@ void MainFrame::OnRestoreBackup(wxCommandEvent& /*event*/) {
     }
 
     UpdateTitle();
+    RefreshActiveTablePage();
     wxMessageBox("Database restored successfully.", "Restore Complete",
                  wxOK | wxICON_INFORMATION, this);
 }
@@ -958,6 +959,7 @@ bool MainFrame::ReopenDatabase(const wxString& path, wxString* outError) {
     if (m_dbService.Open(path, &error) && m_dbService.CheckCompatibility(&error)) {
         UpdateTitle();
         RememberDatabasePath(path);
+        RefreshActiveTablePage();
         return true;
     }
 
@@ -982,6 +984,27 @@ bool MainFrame::ReopenDatabase(const wxString& path, wxString* outError) {
         *outError = switchError;
     }
     return false;
+}
+
+void MainFrame::RefreshActiveTablePage() {
+    if (!dynamic_cast<TablePage*>(m_activeWorkspaceView) || !m_activeNavigationItem.IsOk()) {
+        return;
+    }
+
+    const auto* data =
+        dynamic_cast<const NavigationItemData*>(m_navigationTree->GetItemData(m_activeNavigationItem));
+    if (!data || !data->IsPage()) {
+        return;
+    }
+
+    wxWindow* const refreshedView = CreateNavigationPage(data->PageTitle(), false);
+    if (!refreshedView || !SetWorkspaceView(refreshedView)) {
+        if (refreshedView) {
+            refreshedView->Destroy();
+        }
+        ShowDatabaseError(this, "Refresh Error",
+                          "The active table could not be refreshed. Its existing view was kept.");
+    }
 }
 
 void MainFrame::UpdateTitle() {
