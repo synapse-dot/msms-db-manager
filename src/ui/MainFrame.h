@@ -35,6 +35,7 @@ private:
     void BuildMenuBar();
     void BuildNavigationTree();
     void OnNavigationSelectionChanging(wxTreeEvent& event);
+    [[nodiscard]] bool NavigateToNavigationItem(const wxTreeItemId& item);
     [[nodiscard]] bool ConfirmLeaveActiveForm();
     [[nodiscard]] wxWindow* CreateNavigationPage(const wxString& pageTitle, bool formPage);
     // Replacing the current view destroys the previous workspace child. This is
