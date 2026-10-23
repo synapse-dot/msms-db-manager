@@ -16,6 +16,7 @@
 #else
 #include <fcntl.h>
 #include <sys/file.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -26,6 +27,48 @@ wxString NormalizeFullPath(const wxString& path) {
     wxFileName file(path);
     file.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
     return file.GetFullPath();
+}
+
+bool SameFileIdentity(const wxString& first, const wxString& second) {
+    if (wxFileName(NormalizeFullPath(first)).SameAs(wxFileName(NormalizeFullPath(second)))) {
+        return true;
+    }
+#ifdef _WIN32
+    const wxScopedWCharBuffer firstWide = first.wc_str();
+    const wxScopedWCharBuffer secondWide = second.wc_str();
+    HANDLE firstHandle = CreateFileW(firstWide.data(), FILE_READ_ATTRIBUTES,
+                                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                     nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (firstHandle == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    HANDLE secondHandle = CreateFileW(secondWide.data(), FILE_READ_ATTRIBUTES,
+                                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                      nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (secondHandle == INVALID_HANDLE_VALUE) {
+        CloseHandle(firstHandle);
+        return false;
+    }
+    BY_HANDLE_FILE_INFORMATION firstInfo{};
+    BY_HANDLE_FILE_INFORMATION secondInfo{};
+    const bool firstOk = GetFileInformationByHandle(firstHandle, &firstInfo) != 0;
+    const bool secondOk = GetFileInformationByHandle(secondHandle, &secondInfo) != 0;
+    CloseHandle(firstHandle);
+    CloseHandle(secondHandle);
+    return firstOk && secondOk &&
+           firstInfo.dwVolumeSerialNumber == secondInfo.dwVolumeSerialNumber &&
+           firstInfo.nFileIndexHigh == secondInfo.nFileIndexHigh &&
+           firstInfo.nFileIndexLow == secondInfo.nFileIndexLow;
+#else
+    const wxScopedCharBuffer firstUtf8 = NormalizeFullPath(first).ToUTF8();
+    const wxScopedCharBuffer secondUtf8 = NormalizeFullPath(second).ToUTF8();
+    struct stat firstInfo {};
+    struct stat secondInfo {};
+    if (::stat(firstUtf8.data(), &firstInfo) != 0 || ::stat(secondUtf8.data(), &secondInfo) != 0) {
+        return false;
+    }
+    return firstInfo.st_dev == secondInfo.st_dev && firstInfo.st_ino == secondInfo.st_ino;
+#endif
 }
 
 wxString PathLockFileName(const wxString& dbPath) {
