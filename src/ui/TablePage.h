@@ -9,7 +9,7 @@
 #include <wx/choice.h>
 #include <wx/listctrl.h>
 #include <wx/panel.h>
-#include <wx/searchctrl.h>
+#include <wx/srchctrl.h>
 #include <wx/string.h>
 
 namespace msms {
