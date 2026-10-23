@@ -288,8 +288,19 @@ TEST_CASE("BackupTo only succeeds after verifying the copied database",
     if (wxFileExists(backupDbPath))
         wxRemoveFile(backupDbPath);
 
+    // Seed a valid destination backup so a failed attempt must not destroy it.
+    {
+        msms::DbService existingBackup;
+        wxString setupError;
+        REQUIRE(existingBackup.CreateNew(backupDbPath, &setupError));
+        REQUIRE(existingBackup.Execute(ReadSqlFile("database/seed.sql"), &setupError));
+        REQUIRE(existingBackup.CheckIntegrity(&setupError));
+        REQUIRE(existingBackup.CheckCompatibility(&setupError));
+        existingBackup.Close();
+    }
+
     // Create a valid SQLite file with the wrong application schema. Opening it
-    // is permitted; BackupTo must still reject the resulting copy at verification.
+    // is permitted; BackupTo must reject the resulting copy at verification.
     sqlite3* rawDb = nullptr;
     REQUIRE(sqlite3_open_v2(sourceDbPath.ToUTF8().data(), &rawDb,
                             SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
@@ -303,6 +314,14 @@ TEST_CASE("BackupTo only succeeds after verifying the copied database",
 
     CHECK_FALSE(sourceDb.BackupTo(backupDbPath, &error));
     CHECK(error.Contains("schema check"));
+
+    // The rejected copy must not replace the previously usable backup.
+    msms::DbService preservedBackup;
+    REQUIRE(preservedBackup.Open(backupDbPath, &error));
+    REQUIRE(preservedBackup.CheckIntegrity(&error));
+    REQUIRE(preservedBackup.CheckCompatibility(&error));
+    CHECK(GetRowCount(preservedBackup, "members") == 10);
+    preservedBackup.Close();
 
     sourceDb.Close();
     if (wxFileExists(sourceDbPath))
