@@ -167,6 +167,45 @@ const std::map<std::string, std::vector<std::string>>& RequiredSqlFragments() {
     return fragments;
 }
 
+struct ExpectedForeignKey {
+    const char* fromColumn;
+    const char* targetTable;
+    const char* targetColumn;
+    const char* onUpdate;
+    const char* onDelete;
+};
+
+const std::map<std::string, std::vector<ExpectedForeignKey>>& ExpectedForeignKeys() {
+    static const std::map<std::string, std::vector<ExpectedForeignKey>> keys = {
+        {"members", {}},
+        {"meetings", {}},
+        {"meeting_attendance",
+         {{"meeting_id", "meetings", "meeting_id", "NO ACTION", "RESTRICT"},
+          {"member_id", "members", "member_id", "NO ACTION", "RESTRICT"}}},
+        {"projects", {}},
+        {"project_members",
+         {{"project_id", "projects", "project_id", "NO ACTION", "RESTRICT"},
+          {"member_id", "members", "member_id", "NO ACTION", "RESTRICT"}}},
+        {"committee_appointments",
+         {{"member_id", "members", "member_id", "NO ACTION", "RESTRICT"}}},
+        {"activities", {}},
+        {"external_competitions", {}},
+        {"competition_participants",
+         {{"competition_id", "external_competitions", "competition_id", "NO ACTION", "RESTRICT"},
+          {"member_id", "members", "member_id", "NO ACTION", "RESTRICT"}}}};
+    return keys;
+}
+
+std::string ForeignKeySignature(const std::string& fromColumn, const std::string& targetTable,
+                                const std::string& targetColumn, const std::string& onUpdate,
+                                const std::string& onDelete) {
+    std::string signature = fromColumn + "|" + targetTable + "|" + targetColumn + "|" + onUpdate +
+                            "|" + onDelete;
+    std::transform(signature.begin(), signature.end(), signature.begin(),
+                   [](unsigned char character) { return static_cast<char>(std::toupper(character)); });
+    return signature;
+}
+
 void RemoveEphemeralPathLock(const wxString& dbPath) {
     // Only call this for a unique temporary database path after its DbService
     // connection has been closed; permanent database lock files must remain in place.
