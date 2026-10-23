@@ -11,8 +11,9 @@ ScopedPage::ScopedPage(wxWindow* parent, ScopedPageOptions options)
     BuildControls();
     if (!m_options.parents.empty()) {
         m_parentChoice->SetSelection(0);
-        LoadRows();
     }
+    UpdateEmptyState();
+    LoadRows();
 }
 
 void ScopedPage::BuildControls() {
@@ -51,6 +52,11 @@ void ScopedPage::BuildControls() {
     m_headerLabel->SetFont(headerFont);
     root->Add(m_headerLabel, 0, wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
+    // --- Empty-state placeholder ---
+    m_emptyLabel = new wxStaticText(this, wxID_ANY, m_options.emptyMessage);
+    m_emptyLabel->Wrap(480);
+    root->Add(m_emptyLabel, 0, wxLEFT | wxRIGHT | wxBOTTOM, 10);
+
     // --- Read-only grid ---
     m_grid = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                             wxLC_REPORT | wxLC_SINGLE_SEL | wxLC_HRULES | wxLC_VRULES);
@@ -68,10 +74,24 @@ void ScopedPage::BuildControls() {
     m_nextButton->Bind(wxEVT_BUTTON, &ScopedPage::OnNext, this);
 }
 
+void ScopedPage::UpdateEmptyState() {
+    const bool empty = m_options.parents.empty();
+    m_parentChoice->Enable(!empty);
+    m_prevButton->Enable(false);
+    m_nextButton->Enable(false);
+    m_emptyLabel->Show(empty);
+    m_headerLabel->Show(!empty);
+    m_grid->Show(!empty);
+}
+
 void ScopedPage::LoadRows() {
     const int sel = m_parentChoice->GetSelection();
     const bool hasSelection =
         sel != wxNOT_FOUND && static_cast<std::size_t>(sel) < m_options.parents.size();
+
+    if (m_options.parents.empty()) {
+        return;
+    }
 
     // Update header
     m_headerLabel->SetLabel(hasSelection ? m_options.parents[static_cast<std::size_t>(sel)].label
@@ -112,6 +132,7 @@ void ScopedPage::SetParents(std::vector<ScopedParent> parents) {
     if (!m_options.parents.empty()) {
         m_parentChoice->SetSelection(0);
     }
+    UpdateEmptyState();
     LoadRows();
 }
 

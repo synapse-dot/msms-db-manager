@@ -35,6 +35,7 @@ struct ScopedPageOptions {
     std::vector<ScopedColumn> columns; // Grid column definitions.
     std::vector<ScopedParent> parents; // All selectable parents.
     ScopedRowLoader rowLoader;         // Fetches rows for selected parent.
+    wxString emptyMessage;             // Shown when parents list is empty.
 };
 
 // Reusable scoped relationship page per §6.3 of design.md.
@@ -54,6 +55,7 @@ public:
 private:
     void BuildControls();
     void LoadRows();
+    void UpdateEmptyState();
     void OnParentChanged(wxCommandEvent& event);
     void OnPrevious(wxCommandEvent& event);
     void OnNext(wxCommandEvent& event);
@@ -64,6 +66,7 @@ private:
     wxButton* m_prevButton{nullptr};
     wxButton* m_nextButton{nullptr};
     wxListCtrl* m_grid{nullptr};
+    wxStaticText* m_emptyLabel{nullptr};
 };
 
 } // namespace msms

@@ -20,6 +20,7 @@
 #include <wx/treectrl.h>
 
 #include "db/DbService.h"
+#include "ui/ScopedPage.h"
 #include "ui/TablePage.h"
 
 namespace msms {
@@ -399,6 +400,10 @@ wxWindow* MainFrame::CreateNavigationPage(
         return tablePage;
     }
 
+    if (wxWindow* scopedPage = CreateScopedTablePage(pageTitle)) {
+        return scopedPage;
+    }
+
     auto* view = new wxPanel(m_workspacePanel, wxID_ANY);
     auto* viewSizer = new wxBoxSizer(wxVERTICAL);
 
@@ -589,6 +594,124 @@ wxWindow* MainFrame::CreateRecordTablePage(const wxString& pageTitle) {
     };
 
     return new TablePage(m_workspacePanel, std::move(options));
+}
+
+wxWindow* MainFrame::CreateScopedTablePage(const wxString& pageTitle) {
+    if (!m_dbService.IsOpen()) {
+        return nullptr;
+    }
+
+    const auto loadParents = [this](const wxString& sql, const auto& makeParent) {
+        std::vector<ScopedParent> parents;
+        wxString error;
+        auto statement = m_dbService.Prepare(sql, &error);
+        if (!statement) {
+            ShowDatabaseError(this, "Database Query Error",
+                              wxString("Could not load parent records:\n\n") + error);
+            return parents;
+        }
+        while (statement->Step()) {
+            parents.push_back(makeParent(*statement));
+        }
+        return parents;
+    };
+
+    const auto makeRowLoader = [this](const wxString& sql) -> ScopedRowLoader {
+        return [this, sql](long long parentId) -> std::vector<ScopedRow> {
+            std::vector<ScopedRow> rows;
+            wxString error;
+            auto statement = m_dbService.Prepare(sql, &error);
+            if (!statement) {
+                ShowDatabaseError(this, "Database Query Error",
+                                  wxString("Could not load scoped rows:\n\n") + error);
+                return rows;
+            }
+            statement->BindInt64(1, parentId);
+            while (statement->Step()) {
+                ScopedRow row;
+                const int colCount = statement->GetColumnCount();
+                for (int col = 0; col < colCount; ++col) {
+                    row.cells.push_back(statement->GetText(col));
+                }
+                rows.push_back(std::move(row));
+            }
+            return rows;
+        };
+    };
+
+    ScopedPageOptions opts;
+
+    if (pageTitle == "Attendees") {
+        opts.title = "Meeting";
+        opts.emptyMessage =
+            "No meetings yet \xe2\x80\x94 create one to see attendees.";
+        opts.columns = {{"Member ID", 80}, {"Name", 180}, {"Phone", 130}, {"Email", 220}};
+        opts.parents = loadParents(
+            "SELECT meeting_id, title, meeting_date FROM meetings "
+            "ORDER BY CASE WHEN meeting_date IS NULL OR trim(meeting_date) = '' "
+            "THEN 1 ELSE 0 END ASC, meeting_date DESC, meeting_id ASC;",
+            [](Statement& s) {
+                ScopedParent p;
+                p.id = s.GetInt64(0);
+                const wxString date = s.GetText(2);
+                p.label = s.GetText(1);
+                if (!date.IsEmpty()) {
+                    p.label += wxString::FromUTF8(" \xe2\x80\x94 ") + date;
+                }
+                return p;
+            });
+        opts.rowLoader = makeRowLoader(
+            "SELECT m.member_id, m.name, m.phone, m.email "
+            "FROM meeting_attendance AS ma "
+            "JOIN members AS m ON m.member_id = ma.member_id "
+            "WHERE ma.meeting_id = ? "
+            "ORDER BY m.name COLLATE NOCASE ASC;");
+    } else if (pageTitle == "Project Teams") {
+        opts.title = "Project";
+        opts.emptyMessage =
+            "No projects yet \xe2\x80\x94 create one to see project teams.";
+        opts.columns = {
+            {"Member ID", 80}, {"Name", 180}, {"Phone", 130}, {"Email", 220}, {"Role", 100}};
+        opts.parents = loadParents(
+            "SELECT project_id, title FROM projects "
+            "ORDER BY title COLLATE NOCASE ASC, project_id ASC;",
+            [](Statement& s) {
+                ScopedParent p;
+                p.id = s.GetInt64(0);
+                p.label = s.GetText(1);
+                return p;
+            });
+        opts.rowLoader = makeRowLoader(
+            "SELECT m.member_id, m.name, m.phone, m.email, pm.role "
+            "FROM project_members AS pm "
+            "JOIN members AS m ON m.member_id = pm.member_id "
+            "WHERE pm.project_id = ? "
+            "ORDER BY m.name COLLATE NOCASE ASC;");
+    } else if (pageTitle == "Competition Teams") {
+        opts.title = "Competition";
+        opts.emptyMessage =
+            "No competitions yet \xe2\x80\x94 create one to see competition teams.";
+        opts.columns = {{"Member ID", 80}, {"Name", 180}, {"Role", 140}};
+        opts.parents = loadParents(
+            "SELECT competition_id, title, year FROM external_competitions "
+            "ORDER BY title COLLATE NOCASE ASC, year ASC;",
+            [](Statement& s) {
+                ScopedParent p;
+                p.id = s.GetInt64(0);
+                p.label = s.GetText(1) + wxString::FromUTF8(" \xe2\x80\x94 ") + s.GetText(2);
+                return p;
+            });
+        opts.rowLoader = makeRowLoader(
+            "SELECT m.member_id, m.name, cp.role "
+            "FROM competition_participants AS cp "
+            "JOIN members AS m ON m.member_id = cp.member_id "
+            "WHERE cp.competition_id = ? "
+            "ORDER BY m.name COLLATE NOCASE ASC;");
+    } else {
+        return nullptr;
+    }
+
+    return new ScopedPage(m_workspacePanel, std::move(opts));
 }
 
 bool MainFrame::OpenFormFromTable(
@@ -983,7 +1106,9 @@ bool MainFrame::ReopenDatabase(const wxString& path, wxString* outError) {
 }
 
 void MainFrame::RefreshActiveTablePage() {
-    if (!dynamic_cast<TablePage*>(m_activeWorkspaceView) || !m_activeNavigationItem.IsOk()) {
+    if ((!dynamic_cast<TablePage*>(m_activeWorkspaceView) &&
+         !dynamic_cast<ScopedPage*>(m_activeWorkspaceView)) ||
+        !m_activeNavigationItem.IsOk()) {
         return;
     }
 

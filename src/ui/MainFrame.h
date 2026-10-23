@@ -43,6 +43,7 @@ private:
         const wxString& pageTitle, bool formPage,
         const std::optional<wxString>& recordKey = std::nullopt);
     [[nodiscard]] wxWindow* CreateRecordTablePage(const wxString& pageTitle);
+    [[nodiscard]] wxWindow* CreateScopedTablePage(const wxString& pageTitle);
     [[nodiscard]] bool OpenFormFromTable(
         const wxString& formTitle, const std::optional<wxString>& recordKey);
     void RefreshActiveTablePage();
