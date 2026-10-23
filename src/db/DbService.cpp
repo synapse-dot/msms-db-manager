@@ -377,7 +377,11 @@ bool DbService::Commit(wxString* outError) {
         return false;
     }
     bool ok = Execute("COMMIT;", outError);
-    m_inTransaction = false;
+    // Keep the transaction marked active when COMMIT fails, allowing the RAII
+    // Transaction guard to attempt a rollback instead of abandoning partial work.
+    if (ok) {
+        m_inTransaction = false;
+    }
     return ok;
 }
 
