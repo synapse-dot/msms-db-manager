@@ -28,6 +28,17 @@ wxString NormalizeFullPath(const wxString& path) {
     return file.GetFullPath();
 }
 
+wxString PathLockFileName(const wxString& dbPath) {
+    const wxFileName databaseFile(NormalizeFullPath(dbPath));
+    return databaseFile.GetPathWithSep() + "." + databaseFile.GetFullName() + ".msms.lock";
+}
+
+void RemoveEphemeralPathLock(const wxString& dbPath) {
+    // Only call this for a unique temporary database path after its DbService
+    // connection has been closed; permanent database lock files must remain in place.
+    (void)wxRemoveFile(PathLockFileName(dbPath));
+}
+
 bool AtomicReplaceFile(const wxString& stagedPath, const wxString& workingPath,
                        wxString* outError) {
 #ifdef _WIN32
@@ -257,10 +268,7 @@ DbService::~DbService() {
 }
 
 bool DbService::AcquirePathLock(const wxString& dbPath, bool exclusive, wxString* outError) {
-    const wxString normalizedPath = NormalizeFullPath(dbPath);
-    const wxFileName databaseFile(normalizedPath);
-    const wxString lockPath =
-        databaseFile.GetPathWithSep() + "." + databaseFile.GetFullName() + ".msms.lock";
+    const wxString lockPath = PathLockFileName(dbPath);
     ReleasePathLock();
 
 #ifdef _WIN32
@@ -289,7 +297,6 @@ bool DbService::AcquirePathLock(const wxString& dbPath, bool exclusive, wxString
     m_nativePathLockFd = fd;
 #endif
 
-    m_pathLockPath = lockPath;
     wxString lockError;
     if (!TryNativePathLock(m_nativePathLockHandle, m_nativePathLockFd, exclusive, &lockError)) {
 #ifdef _WIN32
@@ -299,7 +306,6 @@ bool DbService::AcquirePathLock(const wxString& dbPath, bool exclusive, wxString
         ::close(m_nativePathLockFd);
         m_nativePathLockFd = -1;
 #endif
-        m_pathLockPath.Clear();
         if (outError) {
             *outError = lockError;
         }
@@ -376,7 +382,6 @@ void DbService::ReleasePathLock() {
         m_nativePathLockFd = -1;
     }
 #endif
-    m_pathLockPath.Clear();
     m_pathLockExclusive = false;
 }
 
