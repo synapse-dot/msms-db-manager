@@ -24,6 +24,7 @@
 
 #include "db/DbService.h"
 #include "forms/RecordForms.h"
+#include "forms/RelationshipForm.h"
 #include "ui/ScopedPage.h"
 #include "ui/TablePage.h"
 
@@ -472,8 +473,33 @@ wxWindow* MainFrame::CreateNavigationPage(
             return new CompetitionForm(m_workspacePanel, m_dbService, mode, id, returnToParent);
         }
 
-        // Relationship forms remain on their existing placeholder until their
-        // separate relationship-form implementation is added.
+        const bool relationshipForm =
+            pageTitle == "Attendance Register" ||
+            pageTitle == "New / Edit Project Members" ||
+            pageTitle == "New / Edit Competition Team Assignments";
+        if (relationshipForm) {
+            if (!m_dbService.IsOpen()) {
+                ShowDatabaseError(this, "Database Error",
+                                  "Open a database before managing member relationships.");
+                return nullptr;
+            }
+
+            RelationshipKind kind = RelationshipKind::MeetingAttendance;
+            wxString parentTableTitle = "All Meetings";
+            if (pageTitle == "New / Edit Project Members") {
+                kind = RelationshipKind::ProjectMembers;
+                parentTableTitle = "All Projects";
+            } else if (pageTitle == "New / Edit Competition Team Assignments") {
+                kind = RelationshipKind::CompetitionParticipants;
+                parentTableTitle = "All Competitions";
+            }
+
+            const auto returnToParent = [this, parentTableTitle]() {
+                ReturnToTablePage(parentTableTitle);
+            };
+            return new RelationshipForm(m_workspacePanel, m_dbService, kind, returnToParent);
+        }
+
         return new BlankNavigationForm(m_workspacePanel, pageTitle, recordKey);
     }
 
