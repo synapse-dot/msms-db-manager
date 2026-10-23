@@ -80,7 +80,6 @@ private:
     bool ResolveDirtyStateBeforeSwitch(int targetIndex);
     [[nodiscard]] wxString ParentNoun() const;
     [[nodiscard]] wxString ParentEmptyPlaceholder() const;
-    [[nodiscard]] wxString ParentTableTitle() const;
     [[nodiscard]] bool HasRoleControls() const noexcept;
     [[nodiscard]] wxString CurrentRole(const MemberRow& row) const;
 
@@ -94,7 +93,6 @@ private:
     int m_currentParentIndex{-1};
     bool m_loading{false};
 
-    wxStaticText* m_parentLabel{nullptr};
     wxChoice* m_parentChoice{nullptr};
     wxScrolledWindow* m_scrolledWindow{nullptr};
     wxBoxSizer* m_scrolledSizer{nullptr};
