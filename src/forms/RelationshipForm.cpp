@@ -404,6 +404,7 @@ void RelationshipForm::RebuildChecklist(std::vector<MemberRow> rows) {
 
     m_scrolledSizer->Layout();
     m_scrolledWindow->FitInside();
+    m_scrolledWindow->Scroll(0, 0);
     m_scrolledWindow->Layout();
 }
 
