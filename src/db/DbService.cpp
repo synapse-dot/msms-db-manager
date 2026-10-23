@@ -792,6 +792,7 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
     DbService verifier;
     wxString verificationError;
     if (!verifier.Open(tempPath, &verificationError)) {
+        RemoveEphemeralPathLock(tempPath);
         wxRemoveFile(tempPath);
         if (outError) {
             *outError = wxString("The backup copy could not be reopened for verification: ") +
@@ -802,6 +803,7 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
 
     if (!verifier.CheckIntegrity(&verificationError)) {
         verifier.Close();
+        RemoveEphemeralPathLock(tempPath);
         wxRemoveFile(tempPath);
         if (outError) {
             *outError = wxString("The backup copy failed its integrity check: ") +
@@ -812,6 +814,7 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
 
     if (!verifier.CheckCompatibility(&verificationError)) {
         verifier.Close();
+        RemoveEphemeralPathLock(tempPath);
         wxRemoveFile(tempPath);
         if (outError) {
             *outError = wxString("The backup copy failed the database schema check: ") +
@@ -821,6 +824,7 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
     }
 
     verifier.Close();
+    RemoveEphemeralPathLock(tempPath);
 
     // Replace the chosen destination only after all checks passed. This keeps a
     // pre-existing good backup intact when copying or verification fails.
@@ -976,11 +980,13 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
 
     wxString stagedError;
     if (!verifyDatabaseFile(tempPath, &stagedError)) {
+        RemoveEphemeralPathLock(tempPath);
         wxRemoveFile(tempPath);
         return releaseExclusiveAndReopenOriginal(
             wxString("The staged restore file failed integrity or schema verification: ") +
             stagedError);
     }
+    RemoveEphemeralPathLock(tempPath);
 
     // Close only SQLite while retaining the exclusive path lock. Thus there is
     // no window in which another cooperative process can open or write the old file.
@@ -1049,6 +1055,7 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
     }
     if (recovered) {
         recovered = verifyDatabaseFile(recoveryPath, &recoveryError);
+        RemoveEphemeralPathLock(recoveryPath);
     }
     if (recovered) {
         recovered = AtomicReplaceFile(recoveryPath, workingPath, &recoveryError);
