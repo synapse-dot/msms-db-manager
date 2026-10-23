@@ -123,7 +123,9 @@ RelationshipForm::RelationshipForm(wxWindow* parent, DbService& database, Relati
         m_scrolledSizer->Clear(true);
         m_scrolledSizer->Add(
             new wxStaticText(m_scrolledWindow, wxID_ANY,
-                             "Create a parent record before managing its member relationships."),
+                             parentsLoaded
+                                 ? "Create a parent record before managing its member relationships."
+                                 : "Parent records could not be loaded. Close this view and try again."),
             0, wxALL, 10);
         m_scrolledSizer->Layout();
         m_scrolledWindow->FitInside();
@@ -169,8 +171,8 @@ void RelationshipForm::BuildControls() {
     root->Add(title, 0, wxALL, 12);
 
     auto* parentRow = new wxBoxSizer(wxHORIZONTAL);
-    m_parentLabel = new wxStaticText(this, wxID_ANY, ParentNoun() + ":");
-    parentRow->Add(m_parentLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+    auto* parentLabel = new wxStaticText(this, wxID_ANY, ParentNoun() + ":");
+    parentRow->Add(parentLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
     m_parentChoice = new wxChoice(this, wxID_ANY);
     parentRow->Add(m_parentChoice, 1, wxALIGN_CENTER_VERTICAL);
     root->Add(parentRow, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 12);
@@ -502,17 +504,6 @@ wxString RelationshipForm::ParentEmptyPlaceholder() const {
     return "No parent records available";
 }
 
-wxString RelationshipForm::ParentTableTitle() const {
-    switch (m_kind) {
-    case RelationshipKind::MeetingAttendance:
-        return "All Meetings";
-    case RelationshipKind::ProjectMembers:
-        return "All Projects";
-    case RelationshipKind::CompetitionParticipants:
-        return "All Competitions";
-    }
-    return {};
-}
 
 RelationshipForm::UnsavedDecision RelationshipForm::PromptUnsavedChanges() {
     wxDialog dialog(this, wxID_ANY, "Unsaved Changes", wxDefaultPosition, wxDefaultSize,
