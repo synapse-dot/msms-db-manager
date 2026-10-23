@@ -104,7 +104,8 @@ RelationshipForm::RelationshipForm(wxWindow* parent, DbService& database, Relati
     BuildControls();
 
     wxString error;
-    if (!LoadParents(&error)) {
+    const bool parentsLoaded = LoadParents(&error);
+    if (!parentsLoaded) {
         wxMessageBox("Parent records could not be loaded:\n\n" + error,
                      "Relationship Form", wxOK | wxICON_ERROR, this);
         m_parents.clear();
@@ -113,7 +114,8 @@ RelationshipForm::RelationshipForm(wxWindow* parent, DbService& database, Relati
     m_loading = true;
     m_parentChoice->Clear();
     if (m_parents.empty()) {
-        m_parentChoice->Append(ParentEmptyPlaceholder());
+        m_parentChoice->Append(parentsLoaded ? ParentEmptyPlaceholder()
+                                             : "Could not load parent records");
         m_parentChoice->SetSelection(0);
         m_parentChoice->Enable(false);
         m_scrolledWindow->Enable(false);
@@ -748,9 +750,9 @@ void RelationshipForm::OnParentChanged(wxCommandEvent& event) {
         wxMessageBox("The selected parent could not be loaded:\n\n" + error,
                      "Could Not Switch Parent", wxOK | wxICON_ERROR, this);
         m_loading = true;
-        if (m_currentParentIndex >= 0) {
-            m_parentChoice->SetSelection(m_currentParentIndex);
-        }
+        m_parentChoice->SetSelection(m_currentParentIndex >= 0
+                                              ? m_currentParentIndex
+                                              : wxNOT_FOUND);
         m_loading = false;
     }
     event.Skip();
