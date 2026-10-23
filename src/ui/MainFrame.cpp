@@ -139,6 +139,12 @@ bool SameFilePath(const wxString& first, const wxString& second) {
     return firstFile.SameAs(secondFile);
 }
 
+wxString DatabasePathLockFile(const wxString& databasePath) {
+    wxFileName file(databasePath);
+    file.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
+    return file.GetPathWithSep() + "." + file.GetFullName() + ".msms.lock";
+}
+
 void ShowDatabaseError(wxWindow* parent, const wxString& title, const wxString& message) {
     wxMessageBox(message, title, wxOK | wxICON_ERROR, parent);
 }
@@ -975,12 +981,17 @@ void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
         DbService candidate;
         if (!candidate.CreateNew(tempPath, &error) || !candidate.CheckCompatibility(&error)) {
             candidate.Close();
+            wxRemoveFile(DatabasePathLockFile(tempPath));
             wxRemoveFile(tempPath);
             ShowDatabaseError(this, "Database Creation Error",
                               wxString("Could not initialise a new database:\n\n") + error);
             return;
         }
     }
+
+    // The temporary database is no longer an openable path after it is renamed;
+    // remove its now-unused coordination file after the candidate connection closed.
+    wxRemoveFile(DatabasePathLockFile(tempPath));
 
     const wxString previousPath = m_dbService.GetDbPath();
     const bool replacingOpenDatabase =
