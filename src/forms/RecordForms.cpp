@@ -313,7 +313,7 @@ MeetingForm::MeetingForm(wxWindow* parent, DbService& db, RecordFormMode mode,
                                      std::move(onReturnToParent))),
       m_db(db), m_id(recordId) {
     m_title = AddTextField("Title *");
-    m_type = AddChoiceField("Type *", Choices({"AGM", "EGM", "ECM"}), 0);
+    m_type = AddChoiceField("Type *", Choices({"AGM", "EGM", "ECM"}), wxNOT_FOUND);
     m_date = AddTextField("Date");
     m_date->SetHint("YYYY-MM-DD");
     m_startTime = AddTextField("Start Time");
