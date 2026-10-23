@@ -278,7 +278,8 @@ bool DbService::AcquirePathLock(const wxString& dbPath, bool exclusive, wxString
                                 OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (handle == INVALID_HANDLE_VALUE) {
         if (outError) {
-            *outError = wxString::Format("Could not open database coordination lock (Windows error %lu).",
+            *outError = wxString::Format(
+                "Could not open database coordination lock (Windows error %lu).",
                                          static_cast<unsigned long>(GetLastError()));
         }
         return false;
@@ -289,7 +290,8 @@ bool DbService::AcquirePathLock(const wxString& dbPath, bool exclusive, wxString
     const int fd = ::open(lockPathUtf8.data(), O_CREAT | O_RDWR, 0666);
     if (fd < 0) {
         if (outError) {
-            *outError = wxString::Format("Could not open database coordination lock (system error %d: %s).",
+            *outError = wxString::Format(
+                "Could not open database coordination lock (system error %d: %s).",
                                          errno, wxString::FromUTF8(std::strerror(errno)));
         }
         return false;
