@@ -1,3 +1,6 @@
+#include <filesystem>
+#include <system_error>
+
 #include <wx/dir.h>
 #include <wx/file.h>
 #include <wx/filefn.h>
@@ -366,13 +369,19 @@ TEST_CASE(
         badFile.Close();
     }
 
-    // Create a structurally valid SQLite file with an incompatible application schema.
+    // Keep the required activities table and column names, but give a key the
+    // wrong declared type. Compatibility validation must reject definitions,
+    // not merely check that names happen to exist.
     {
         sqlite3* rawDb = nullptr;
         REQUIRE(sqlite3_open_v2(incompatibleBackupPath.ToUTF8().data(), &rawDb,
                                 SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
-        REQUIRE(sqlite3_exec(rawDb, "CREATE TABLE unrelated (id INTEGER PRIMARY KEY);",
-                             nullptr, nullptr, nullptr) == SQLITE_OK);
+        REQUIRE(sqlite3_exec(
+                    rawDb,
+                    "CREATE TABLE activities (activity_id TEXT PRIMARY KEY, title TEXT NOT NULL, "
+                    "type TEXT NOT NULL, activity_date TEXT, start_time TEXT, end_time TEXT, "
+                    "location TEXT);",
+                    nullptr, nullptr, nullptr) == SQLITE_OK);
         REQUIRE(sqlite3_close_v2(rawDb) == SQLITE_OK);
     }
 
@@ -394,6 +403,25 @@ TEST_CASE(
         wxString matchedFile;
         const wxString restoreTempPattern = "." + workFn.GetFullName() + ".restore.tmp.*";
         CHECK_FALSE(workDir.GetFirst(&matchedFile, restoreTempPattern, wxDIR_FILES));
+    }
+
+    SECTION("Restoring from a hard-link alias of the active database is rejected") {
+        const wxString hardLinkPath = workingDbPath + ".hardlink";
+        std::error_code linkError;
+        std::filesystem::create_hard_link(
+            std::filesystem::path(workingDbPath.ToStdString()),
+            std::filesystem::path(hardLinkPath.ToStdString()), linkError);
+
+        if (linkError) {
+            WARN("Hard-link test skipped because the filesystem refused link creation: "
+                 << linkError.message());
+        } else {
+            CHECK_FALSE(db.RestoreFrom(hardLinkPath, &error));
+            CHECK(error.Contains("alias"));
+            CHECK(GetRowCount(db, "members") == 10);
+            CHECK(db.CheckIntegrity(&error));
+            std::filesystem::remove(std::filesystem::path(hardLinkPath.ToStdString()), linkError);
+        }
     }
 
     SECTION("Restoring from the active database is rejected without changes") {
