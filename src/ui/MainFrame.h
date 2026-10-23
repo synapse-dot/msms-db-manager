@@ -10,19 +10,11 @@
 #include <wx/treectrl.h>
 #include <wx/window.h>
 
+#include "ui/INavigationForm.h"
+
 namespace msms {
 
 class DbService;
-
-// Implement this interface on workspace form views so navigation can protect
-// dirty state without depending on a specific form implementation.
-class INavigationForm {
-public:
-    virtual ~INavigationForm() = default;
-    [[nodiscard]] virtual bool IsDirty() const = 0;
-    virtual bool Save(wxString* outError = nullptr) = 0;
-    virtual void DiscardChanges() = 0;
-};
 
 class MainFrame : public wxFrame {
 public:
