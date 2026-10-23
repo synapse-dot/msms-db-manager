@@ -569,85 +569,218 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
         return false;
     }
 
-    if (!wxFileExists(backupPath)) {
+    if (backupPath.IsEmpty() || !wxFileExists(backupPath)) {
         if (outError) {
-            *outError = wxString::Format("Backup file does not exist: %s", backupPath);
+            *outError = backupPath.IsEmpty()
+                            ? "A backup file must be selected."
+                            : wxString::Format("Backup file does not exist: %s", backupPath);
         }
         return false;
     }
 
-    // 1. Validate backupPath with integrity_check and table compatibility check
-    DbService backupChecker;
-    if (!backupChecker.Open(backupPath, outError)) {
-        if (outError) {
-            *outError =
-                wxString::Format("Candidate backup validation failed on open: %s", *outError);
-        }
-        return false;
-    }
-    if (!backupChecker.CheckIntegrity(outError)) {
-        if (outError) {
-            *outError = wxString::Format("Candidate backup failed integrity check: %s", *outError);
-        }
-        return false;
-    }
-    if (!backupChecker.CheckCompatibility(outError)) {
-        if (outError) {
-            *outError =
-                wxString::Format("Candidate backup failed compatibility check: %s", *outError);
-        }
-        return false;
-    }
-    backupChecker.Close();
-
-    // 2. Write timestamped safety copy of current active database alongside working database
-    wxFileName currentFn(m_dbPath);
-    currentFn.Normalize(wxPATH_NORM_ABSOLUTE);
-    const wxString timestamp = wxDateTime::Now().Format("%Y%m%d_%H%M%S");
-    const wxString safetyPath =
-        currentFn.GetPathWithSep() + currentFn.GetFullName() + ".backup." + timestamp;
     const wxString currentDbPath = m_dbPath;
+    wxFileName currentFn(currentDbPath);
+    wxFileName candidateFn(backupPath);
+    currentFn.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
+    candidateFn.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
+    const wxString workingPath = currentFn.GetFullPath();
+    const wxString candidatePath = candidateFn.GetFullPath();
 
-    if (!BackupTo(safetyPath, outError)) {
+    if (currentFn.SameAs(candidateFn)) {
         if (outError) {
-            *outError = wxString::Format("Failed to create timestamped safety copy: %s", *outError);
+            *outError = "The selected backup is the currently open database.";
         }
         return false;
     }
 
-    // 3. Atomically replace database using temporary file and atomic rename
+    const auto verifyDatabaseFile = [](const wxString& path, wxString* error) {
+        DbService verifier;
+        if (!verifier.Open(path, error)) {
+            return false;
+        }
+        if (!verifier.CheckIntegrity(error) || !verifier.CheckCompatibility(error)) {
+            verifier.Close();
+            return false;
+        }
+        verifier.Close();
+        return true;
+    };
+
+    // Validate the selected candidate before creating a safety copy or touching
+    // the active connection. The staged copy is verified again before replacement.
+    wxString candidateError;
+    if (!verifyDatabaseFile(candidatePath, &candidateError)) {
+        if (outError) {
+            *outError = wxString("The selected backup is not a valid MSMS database: ") +
+                        candidateError;
+        }
+        return false;
+    }
+
+    // Create a unique timestamped safety copy beside the working database.
+    // Never overwrite an earlier safety copy, even if restore is run repeatedly
+    // within the same second.
+    const wxString timestamp = wxDateTime::Now().Format("%Y%m%d_%H%M%S");
+    const wxString safetyBase =
+        currentFn.GetPathWithSep() + currentFn.GetFullName() + ".backup." + timestamp;
+    wxString safetyPath = safetyBase;
+    unsigned int safetySuffix = 1;
+    while (wxFileExists(safetyPath) || wxFileName(safetyPath).SameAs(candidateFn)) {
+        safetyPath = safetyBase + wxString::Format("_%02u", safetySuffix++);
+    }
+
+    wxString safetyError;
+    if (!BackupTo(safetyPath, &safetyError)) {
+        if (outError) {
+            *outError = wxString("Failed to create the timestamped safety copy: ") + safetyError;
+        }
+        return false;
+    }
+
+    const auto openAndVerifyWorkingDatabase = [&](const wxString& path, wxString* error) {
+        wxString localError;
+        if (!Open(path, &localError)) {
+            if (error) {
+                *error = localError;
+            }
+            return false;
+        }
+        if (!CheckIntegrity(&localError) || !CheckCompatibility(&localError)) {
+            Close();
+            if (error) {
+                *error = localError;
+            }
+            return false;
+        }
+        // Open() enables foreign-key enforcement and verifies PRAGMA foreign_keys = 1.
+        return true;
+    };
+
+    const auto restoreSafetyCopy = [&](wxString* error) {
+        Close();
+
+        const wxString recoveryPrefix =
+            currentFn.GetPathWithSep() + "." + currentFn.GetFullName() + ".restore-recovery.";
+        const wxString recoveryPath = wxFileName::CreateTempFileName(recoveryPrefix);
+        if (recoveryPath.IsEmpty()) {
+            if (error) {
+                *error = "Could not create a temporary file for safety-copy recovery.";
+            }
+            return false;
+        }
+
+        if (!wxCopyFile(safetyPath, recoveryPath, true)) {
+            wxRemoveFile(recoveryPath);
+            if (error) {
+                *error = "Could not copy the safety database to a recovery file.";
+            }
+            return false;
+        }
+
+        wxString verifyError;
+        if (!verifyDatabaseFile(recoveryPath, &verifyError)) {
+            wxRemoveFile(recoveryPath);
+            if (error) {
+                *error = wxString("The safety-copy recovery file failed verification: ") +
+                         verifyError;
+            }
+            return false;
+        }
+
+        if (!wxRenameFile(recoveryPath, workingPath, true)) {
+            wxRemoveFile(recoveryPath);
+            if (error) {
+                *error = "Could not atomically restore the safety copy to the working path.";
+            }
+            return false;
+        }
+
+        if (!openAndVerifyWorkingDatabase(workingPath, &verifyError)) {
+            Close();
+            if (error) {
+                *error = wxString("The safety copy was put back, but could not be reopened: ") +
+                         verifyError;
+            }
+            return false;
+        }
+        return true;
+    };
+
+    const auto failBeforeReplace = [&](const wxString& failure) {
+        wxString recoveryNote;
+        if (openAndVerifyWorkingDatabase(workingPath, &recoveryNote)) {
+            if (outError) {
+                *outError = failure +
+                            "\n\nThe original database file was left unchanged and the "
+                            "connection was reopened.";
+            }
+            return false;
+        }
+
+        Close();
+        if (restoreSafetyCopy(&recoveryNote)) {
+            if (outError) {
+                *outError = failure +
+                            "\n\nThe original database could not be reopened directly, so it "
+                            "was recovered from the safety copy.";
+            }
+            return false;
+        }
+
+        if (outError) {
+            *outError = failure + "\n\nRecovery also failed: " + recoveryNote +
+                        "\nThe safety copy remains at: " + safetyPath;
+        }
+        return false;
+    };
+
+    // Close the active SQLite connection before staging and replacing its file.
     Close();
 
-    const wxString tempPath = currentFn.GetPathWithSep() + currentFn.GetFullName() + ".tmp_restore";
-    if (wxFileExists(tempPath)) {
+    const wxString tempPrefix =
+        currentFn.GetPathWithSep() + "." + currentFn.GetFullName() + ".restore.tmp.";
+    const wxString tempPath = wxFileName::CreateTempFileName(tempPrefix);
+    if (tempPath.IsEmpty()) {
+        return failBeforeReplace("Could not create a temporary restore file beside the working database.");
+    }
+
+    if (!wxCopyFile(candidatePath, tempPath, true)) {
         wxRemoveFile(tempPath);
+        return failBeforeReplace("Could not copy the selected backup to the temporary restore file.");
     }
 
-    if (!wxCopyFile(backupPath, tempPath)) {
-        if (outError) {
-            *outError = "Failed to copy backup file to temporary restore file.";
-        }
-        // Attempt to reopen current working database
-        Open(currentDbPath, nullptr);
-        return false;
+    wxString stagedError;
+    if (!verifyDatabaseFile(tempPath, &stagedError)) {
+        wxRemoveFile(tempPath);
+        return failBeforeReplace(
+            wxString("The staged restore file failed integrity or schema verification: ") +
+            stagedError);
     }
 
-    if (!wxRenameFile(tempPath, currentDbPath, true /* overwrite */)) {
-        if (outError) {
-            *outError = "Atomic rename of temporary file to working database failed.";
-        }
-        if (wxFileExists(tempPath)) {
-            wxRemoveFile(tempPath);
-        }
-        // Attempt to reopen current working database
-        Open(currentDbPath, nullptr);
-        return false;
+    // Both paths are in the same directory, so the final rename is the atomic
+    // replacement step. Until this point the working database file is untouched.
+    if (!wxRenameFile(tempPath, workingPath, true)) {
+        wxRemoveFile(tempPath);
+        return failBeforeReplace("Atomic replacement of the working database failed.");
     }
 
-    // 4. Reopen connection and verify PRAGMA foreign_keys = ON
-    if (!Open(currentDbPath, outError)) {
-        if (outError) {
-            *outError = wxString::Format("Failed to reopen database after restore: %s", *outError);
+    // Open() verifies PRAGMA foreign_keys = 1. Re-check integrity and schema
+    // after the replacement as a final guard. If activation fails, restore the
+    // safety copy rather than leaving a bad database at the working path.
+    wxString activationError;
+    if (!openAndVerifyWorkingDatabase(workingPath, &activationError)) {
+        Close();
+        wxString recoveryError;
+        if (restoreSafetyCopy(&recoveryError)) {
+            if (outError) {
+                *outError = wxString("The restored database could not be activated: ") +
+                            activationError +
+                            "\n\nThe previous database was restored from the safety copy.";
+            }
+        } else if (outError) {
+            *outError = wxString("The restored database could not be activated: ") +
+                        activationError + "\n\nSafety-copy recovery failed: " + recoveryError +
+                        "\nThe safety copy remains at: " + safetyPath;
         }
         return false;
     }
