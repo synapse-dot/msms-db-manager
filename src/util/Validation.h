@@ -5,7 +5,9 @@
 #include <cstdint>
 #include <optional>
 
+#include <wx/msgdlg.h>
 #include <wx/string.h>
+#include <wx/window.h>
 
 #include <sqlite3.h>
 
@@ -316,6 +318,23 @@ inline wxString MemberDuplicateNameWarningMessage() {
 
 inline wxString CompetitionDuplicateMessage() {
     return "A competition with this title and year already exists. Choose a different title or year.";
+}
+
+// Query and show an advisory warning when the member name is already used.
+// The result remains true and the warning does not make the value invalid, so
+// callers may continue saving after the dialog is dismissed.
+inline std::optional<bool> CheckMemberNameAndWarn(
+    wxWindow* parent, const DbService& db, const wxString& name,
+    std::optional<std::int64_t> excludedMemberId = std::nullopt,
+    wxString* outError = nullptr) {
+    const auto duplicate =
+        HasDuplicateMemberName(db, name, excludedMemberId, outError);
+    if (duplicate && *duplicate) {
+        wxMessageBox(MemberDuplicateNameWarningMessage() +
+                         "\\n\\nNames are not required to be unique; you may continue saving.",
+                     "Possible Duplicate Member Name", wxOK | wxICON_WARNING, parent);
+    }
+    return duplicate;
 }
 
 } // namespace msms::validation
