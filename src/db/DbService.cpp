@@ -256,7 +256,129 @@ DbService::~DbService() {
     Close();
 }
 
-void DbService::Close() {
+bool DbService::AcquirePathLock(const wxString& dbPath, bool exclusive, wxString* outError) {
+    const wxString normalizedPath = NormalizeFullPath(dbPath);
+    const wxString lockPath = normalizedPath + ".msms.lock";
+    ReleasePathLock();
+
+#ifdef _WIN32
+    const wxScopedWCharBuffer wideLockPath = lockPath.wc_str();
+    HANDLE handle = CreateFileW(wideLockPath.data(), GENERIC_READ | GENERIC_WRITE,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        if (outError) {
+            *outError = wxString::Format("Could not open database coordination lock (Windows error %lu).",
+                                         static_cast<unsigned long>(GetLastError()));
+        }
+        return false;
+    }
+    m_nativePathLockHandle = reinterpret_cast<void*>(handle);
+#else
+    const wxScopedCharBuffer lockPathUtf8 = lockPath.ToUTF8();
+    const int fd = ::open(lockPathUtf8.data(), O_CREAT | O_RDWR, 0666);
+    if (fd < 0) {
+        if (outError) {
+            *outError = wxString::Format("Could not open database coordination lock (system error %d: %s).",
+                                         errno, wxString::FromUTF8(std::strerror(errno)));
+        }
+        return false;
+    }
+    m_nativePathLockFd = fd;
+#endif
+
+    m_pathLockPath = lockPath;
+    wxString lockError;
+    if (!TryNativePathLock(m_nativePathLockHandle, m_nativePathLockFd, exclusive, &lockError)) {
+#ifdef _WIN32
+        CloseHandle(reinterpret_cast<HANDLE>(m_nativePathLockHandle));
+        m_nativePathLockHandle = nullptr;
+#else
+        ::close(m_nativePathLockFd);
+        m_nativePathLockFd = -1;
+#endif
+        m_pathLockPath.Clear();
+        if (outError) {
+            *outError = lockError;
+        }
+        return false;
+    }
+
+    m_pathLockHeld = true;
+    m_pathLockExclusive = exclusive;
+    return true;
+}
+
+bool DbService::ChangePathLockMode(bool exclusive, wxString* outError) {
+    if (!m_pathLockHeld) {
+        if (outError) {
+            *outError = "No database coordination lock is held.";
+        }
+        return false;
+    }
+    if (m_pathLockExclusive == exclusive) {
+        return true;
+    }
+
+    const bool previousMode = m_pathLockExclusive;
+    wxString unlockError;
+    if (!UnlockNativePathLock(m_nativePathLockHandle, m_nativePathLockFd, &unlockError)) {
+        if (outError) {
+            *outError = unlockError;
+        }
+        return false;
+    }
+    m_pathLockHeld = false;
+
+    wxString targetError;
+    if (TryNativePathLock(m_nativePathLockHandle, m_nativePathLockFd, exclusive, &targetError)) {
+        m_pathLockHeld = true;
+        m_pathLockExclusive = exclusive;
+        return true;
+    }
+
+    // Lock-mode transitions are not atomic on every supported OS. Reacquire the
+    // previous mode before returning so a failed restore upgrade does not leave
+    // an open SQLite connection without its normal shared path lock.
+    wxString previousError;
+    if (TryNativePathLock(m_nativePathLockHandle, m_nativePathLockFd, previousMode,
+                          &previousError)) {
+        m_pathLockHeld = true;
+        m_pathLockExclusive = previousMode;
+        if (outError) {
+            *outError = targetError;
+        }
+        return false;
+    }
+
+    if (outError) {
+        *outError = targetError +
+                    "\nThe previous path lock could not be reacquired: " + previousError;
+    }
+    return false;
+}
+
+void DbService::ReleasePathLock() {
+    if (m_pathLockHeld) {
+        (void)UnlockNativePathLock(m_nativePathLockHandle, m_nativePathLockFd, nullptr);
+        m_pathLockHeld = false;
+    }
+#ifdef _WIN32
+    if (m_nativePathLockHandle) {
+        CloseHandle(reinterpret_cast<HANDLE>(m_nativePathLockHandle));
+        m_nativePathLockHandle = nullptr;
+    }
+#else
+    if (m_nativePathLockFd >= 0) {
+        ::close(m_nativePathLockFd);
+        m_nativePathLockFd = -1;
+    }
+#endif
+    m_pathLockPath.Clear();
+    m_pathLockExclusive = false;
+}
+
+void DbService::CloseConnectionPreservingPathLock() {
     if (m_db) {
         if (m_inTransaction) {
             Rollback(nullptr);
@@ -268,6 +390,11 @@ void DbService::Close() {
     m_inTransaction = false;
 }
 
+void DbService::Close() {
+    CloseConnectionPreservingPathLock();
+    ReleasePathLock();
+}
+
 bool DbService::Open(const wxString& dbPath, wxString* outError) {
     Close();
 
@@ -275,6 +402,10 @@ bool DbService::Open(const wxString& dbPath, wxString* outError) {
         if (outError) {
             *outError = wxString::Format("Database file does not exist: %s", dbPath);
         }
+        return false;
+    }
+
+    if (!AcquirePathLock(dbPath, false, outError)) {
         return false;
     }
 
@@ -302,6 +433,12 @@ bool DbService::Open(const wxString& dbPath, wxString* outError) {
 bool DbService::CreateNew(const wxString& dbPath, wxString* outError) {
     Close();
 
+    // Exclusively lock the target while initialising it so another app instance
+    // cannot open the partially-created database.
+    if (!AcquirePathLock(dbPath, true, outError)) {
+        return false;
+    }
+
     const wxScopedCharBuffer utf8Path = dbPath.ToUTF8();
     int rc = sqlite3_open_v2(utf8Path.data(), &m_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
                              nullptr);
@@ -326,7 +463,12 @@ bool DbService::CreateNew(const wxString& dbPath, wxString* outError) {
         return false;
     }
 
-    return true;
+    // Do not transition from exclusive to shared while the connection remains
+    // open; close under the exclusive lock, release it, then reopen with a shared
+    // lock so another process can never write to an orphaned database handle.
+    CloseConnectionPreservingPathLock();
+    ReleasePathLock();
+    return Open(dbPath, outError);
 }
 
 bool DbService::EnableForeignKeys(wxString* outError) {
