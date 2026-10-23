@@ -12,6 +12,7 @@
 #include <wx/panel.h>
 #include <wx/scrolwin.h>
 #include <wx/sizer.h>
+#include <wx/stattext.h>
 #include <wx/string.h>
 #include <wx/textctrl.h>
 
@@ -97,7 +98,6 @@ private:
     wxChoice* m_parentChoice{nullptr};
     wxScrolledWindow* m_scrolledWindow{nullptr};
     wxBoxSizer* m_scrolledSizer{nullptr};
-    wxStaticText* m_emptyMembersLabel{nullptr};
     wxButton* m_saveButton{nullptr};
     wxButton* m_cancelButton{nullptr};
 };
