@@ -1,6 +1,7 @@
 #include "DbService.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -681,54 +682,205 @@ bool DbService::InitializeSchema(wxString* outError) {
 }
 
 bool DbService::CheckCompatibility(wxString* outError) const {
-    if (!IsOpen()) {
-        if (outError)
-            *outError = "Database is not open.";
+    const auto fail = [outError](const wxString& message) {
+        if (outError) {
+            *outError = message;
+        }
         return false;
+    };
+
+    if (!IsOpen()) {
+        return fail("Database is not open.");
     }
 
-    // 1. Check all expected tables exist
     const auto& required = GetRequiredSchema();
     std::set<std::string> existingTables;
 
-    auto stmt = Prepare("SELECT name FROM sqlite_master WHERE type = 'table';", outError);
-    if (!stmt)
+    auto tablesStatement = Prepare("SELECT name FROM sqlite_master WHERE type = 'table';", outError);
+    if (!tablesStatement) {
         return false;
-
-    while (stmt->Step()) {
-        existingTables.insert(stmt->GetText(0).ToStdString());
     }
 
-    for (const auto& [tableName, columns] : required) {
+    int rc = SQLITE_OK;
+    while ((rc = sqlite3_step(tablesStatement->Get())) == SQLITE_ROW) {
+        existingTables.insert(tablesStatement->GetText(0).ToStdString());
+    }
+    if (rc != SQLITE_DONE) {
+        return fail(wxString("Compatibility check failed while reading table names: ") +
+                    GetLastErrorMessage());
+    }
+    tablesStatement.reset();
+
+    const auto& expectedColumns = ExpectedColumns();
+    const auto& requiredFragments = RequiredSqlFragments();
+    const auto& expectedForeignKeys = ExpectedForeignKeys();
+
+    struct ActualColumn {
+        wxString type;
+        int notNull{0};
+        bool hasDefault{false};
+        wxString defaultValue;
+        int primaryKeyPosition{0};
+    };
+
+    for (const auto& [tableName, requiredColumnNames] : required) {
         if (existingTables.find(tableName) == existingTables.end()) {
-            if (outError) {
-                *outError = wxString::Format("Compatibility check failed: Missing table '%s'",
-                                             wxString::FromUTF8(tableName.c_str()));
+            return fail(wxString::Format("Compatibility check failed: Missing table '%s'.",
+                                         wxString::FromUTF8(tableName.c_str())));
+        }
+
+        auto expectedTable = expectedColumns.find(tableName);
+        if (expectedTable == expectedColumns.end()) {
+            return fail(wxString::Format("Compatibility rules are missing for table '%s'.",
+                                         wxString::FromUTF8(tableName.c_str())));
+        }
+
+        const wxString tableInfoSql = wxString::Format("PRAGMA table_info(%s);", tableName);
+        auto columnStatement = Prepare(tableInfoSql, outError);
+        if (!columnStatement) {
+            return false;
+        }
+
+        std::map<std::string, ActualColumn> actualColumns;
+        while ((rc = sqlite3_step(columnStatement->Get())) == SQLITE_ROW) {
+            wxString name = columnStatement->GetText(1);
+            name.MakeLower();
+            ActualColumn column;
+            column.type = columnStatement->GetText(2);
+            column.notNull = columnStatement->GetInt(3);
+            column.hasDefault = !columnStatement->IsNull(4);
+            column.defaultValue = columnStatement->GetText(4);
+            column.primaryKeyPosition = columnStatement->GetInt(5);
+            actualColumns[name.ToStdString()] = column;
+        }
+        if (rc != SQLITE_DONE) {
+            return fail(wxString::Format("Compatibility check failed while reading columns for '%s': %s",
+                                         wxString::FromUTF8(tableName.c_str()),
+                                         GetLastErrorMessage()));
+        }
+        columnStatement.reset();
+
+        for (const auto& requiredColumnName : requiredColumnNames) {
+            if (actualColumns.find(requiredColumnName) == actualColumns.end()) {
+                return fail(wxString::Format(
+                    "Compatibility check failed: Table '%s' is missing column '%s'.",
+                    wxString::FromUTF8(tableName.c_str()),
+                    wxString::FromUTF8(requiredColumnName.c_str())));
             }
-            return false;
         }
 
-        // 2. Check each column exists in the table
-        wxString tableInfoSql = wxString::Format("PRAGMA table_info(%s);", tableName);
-        auto colStmt = Prepare(tableInfoSql, outError);
-        if (!colStmt)
-            return false;
+        for (const auto& specification : expectedTable->second) {
+            const auto found = actualColumns.find(specification.name);
+            if (found == actualColumns.end()) {
+                return fail(wxString::Format(
+                    "Compatibility check failed: Table '%s' is missing column '%s'.",
+                    wxString::FromUTF8(tableName.c_str()),
+                    wxString::FromUTF8(specification.name)));
+            }
 
-        std::set<std::string> existingColumns;
-        while (colStmt->Step()) {
-            // column 1 in PRAGMA table_info is column name
-            existingColumns.insert(colStmt->GetText(1).ToStdString());
+            const ActualColumn& actual = found->second;
+            if (actual.type.CmpNoCase(wxString::FromUTF8(specification.type)) != 0) {
+                return fail(wxString::Format(
+                    "Compatibility check failed: '%s.%s' must have type %s.",
+                    wxString::FromUTF8(tableName.c_str()),
+                    wxString::FromUTF8(specification.name),
+                    wxString::FromUTF8(specification.type)));
+            }
+            if ((actual.notNull != 0) != specification.notNull) {
+                return fail(wxString::Format(
+                    "Compatibility check failed: '%s.%s' has an incorrect NOT NULL definition.",
+                    wxString::FromUTF8(tableName.c_str()),
+                    wxString::FromUTF8(specification.name)));
+            }
+            const bool expectedDefault = specification.defaultValue != nullptr;
+            if (actual.hasDefault != expectedDefault ||
+                (expectedDefault &&
+                 actual.defaultValue.ToStdString() != specification.defaultValue)) {
+                return fail(wxString::Format(
+                    "Compatibility check failed: '%s.%s' has an incorrect default value.",
+                    wxString::FromUTF8(tableName.c_str()),
+                    wxString::FromUTF8(specification.name)));
+            }
+            if (actual.primaryKeyPosition != specification.primaryKeyPosition) {
+                return fail(wxString::Format(
+                    "Compatibility check failed: '%s.%s' has an incorrect primary-key definition.",
+                    wxString::FromUTF8(tableName.c_str()),
+                    wxString::FromUTF8(specification.name)));
+            }
         }
 
-        for (const auto& colName : columns) {
-            if (existingColumns.find(colName) == existingColumns.end()) {
-                if (outError) {
-                    *outError = wxString::Format(
-                        "Compatibility check failed: Table '%s' is missing column '%s'",
-                        wxString::FromUTF8(tableName.c_str()), wxString::FromUTF8(colName.c_str()));
+        // PRAGMA table_info cannot report CHECK constraints or table-level UNIQUE
+        // constraints, so also verify required invariants in the table's SQL.
+        auto sqlStatement = Prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?;", outError);
+        if (!sqlStatement) {
+            return false;
+        }
+        if (!sqlStatement->BindText(1, wxString::FromUTF8(tableName.c_str()))) {
+            return fail(wxString::Format("Could not bind schema lookup for table '%s'.",
+                                         wxString::FromUTF8(tableName.c_str())));
+        }
+        rc = sqlite3_step(sqlStatement->Get());
+        if (rc != SQLITE_ROW) {
+            return fail(wxString::Format("Compatibility check failed: Could not read the SQL "
+                                         "definition for table '%s'.",
+                                         wxString::FromUTF8(tableName.c_str())));
+        }
+        const wxString normalizedSql = NormalizeSqlFragment(sqlStatement->GetText(0));
+        sqlStatement.reset();
+
+        const auto fragments = requiredFragments.find(tableName);
+        if (fragments != requiredFragments.end()) {
+            for (const auto& fragment : fragments->second) {
+                if (!normalizedSql.Contains(NormalizeSqlFragment(wxString::FromUTF8(fragment)))) {
+                    return fail(wxString::Format(
+                        "Compatibility check failed: Table '%s' is missing a required constraint.",
+                        wxString::FromUTF8(tableName.c_str())));
                 }
-                return false;
             }
+        }
+
+        // Require the exact foreign-key relationships and delete/update actions.
+        const auto expectedKeys = expectedForeignKeys.find(tableName);
+        if (expectedKeys == expectedForeignKeys.end()) {
+            return fail(wxString::Format("Compatibility rules are missing foreign-key metadata "
+                                         "for table '%s'.",
+                                         wxString::FromUTF8(tableName.c_str())));
+        }
+
+        const wxString foreignKeySql = wxString::Format("PRAGMA foreign_key_list(%s);", tableName);
+        auto foreignKeyStatement = Prepare(foreignKeySql, outError);
+        if (!foreignKeyStatement) {
+            return false;
+        }
+
+        std::vector<std::string> actualKeySignatures;
+        while ((rc = sqlite3_step(foreignKeyStatement->Get())) == SQLITE_ROW) {
+            actualKeySignatures.push_back(ForeignKeySignature(
+                foreignKeyStatement->GetText(3).ToStdString(),
+                foreignKeyStatement->GetText(2).ToStdString(),
+                foreignKeyStatement->GetText(4).ToStdString(),
+                foreignKeyStatement->GetText(5).ToStdString(),
+                foreignKeyStatement->GetText(6).ToStdString()));
+        }
+        if (rc != SQLITE_DONE) {
+            return fail(wxString::Format(
+                "Compatibility check failed while reading foreign keys for table '%s': %s",
+                wxString::FromUTF8(tableName.c_str()), GetLastErrorMessage()));
+        }
+        foreignKeyStatement.reset();
+
+        std::vector<std::string> expectedKeySignatures;
+        for (const auto& key : expectedKeys->second) {
+            expectedKeySignatures.push_back(ForeignKeySignature(
+                key.fromColumn, key.targetTable, key.targetColumn, key.onUpdate, key.onDelete));
+        }
+        std::sort(actualKeySignatures.begin(), actualKeySignatures.end());
+        std::sort(expectedKeySignatures.begin(), expectedKeySignatures.end());
+        if (actualKeySignatures != expectedKeySignatures) {
+            return fail(wxString::Format(
+                "Compatibility check failed: Table '%s' has missing or incompatible foreign keys.",
+                wxString::FromUTF8(tableName.c_str())));
         }
     }
 
