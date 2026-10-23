@@ -236,6 +236,12 @@ bool RelationshipForm::LoadParents(wxString* outError) {
         } else {
             record.label = LabelWithDate(title, statement->GetText(2));
         }
+
+        // Titles and dates are not unique in the schema. Show the record ID so
+        // users can distinguish otherwise-identical parents before editing
+        // the hidden relationship key.
+        record.label += wxString::Format(" [ID: %lld]",
+                                         static_cast<long long>(record.id));
         loaded.push_back(std::move(record));
     }
 
