@@ -6,6 +6,7 @@
 #include <optional>
 #include <vector>
 
+#include <wx/arrstr.h>
 #include <wx/choice.h>
 #include <wx/combobox.h>
 #include <wx/textctrl.h>
