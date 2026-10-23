@@ -131,7 +131,19 @@ bool RecordForm::TrackField(wxWindow* control) {
     TrackedField field;
     field.control = control;
 
-    if (auto* text = dynamic_cast<wxTextCtrl*>(control)) {
+    // Test wxComboBox before text/choice base classes so its editable text
+    // value, rather than only its selected index, is used for dirty tracking.
+    if (auto* combo = dynamic_cast<wxComboBox*>(control)) {
+        field.kind = TrackedKind::Combo;
+        combo->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
+            UpdateDirtyState();
+            event.Skip();
+        });
+        combo->Bind(wxEVT_COMBOBOX, [this](wxCommandEvent& event) {
+            UpdateDirtyState();
+            event.Skip();
+        });
+    } else if (auto* text = dynamic_cast<wxTextCtrl*>(control)) {
         field.kind = TrackedKind::Text;
         text->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
             UpdateDirtyState();
@@ -140,16 +152,6 @@ bool RecordForm::TrackField(wxWindow* control) {
     } else if (auto* choice = dynamic_cast<wxChoice*>(control)) {
         field.kind = TrackedKind::Choice;
         choice->Bind(wxEVT_CHOICE, [this](wxCommandEvent& event) {
-            UpdateDirtyState();
-            event.Skip();
-        });
-    } else if (auto* combo = dynamic_cast<wxComboBox*>(control)) {
-        field.kind = TrackedKind::Combo;
-        combo->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
-            UpdateDirtyState();
-            event.Skip();
-        });
-        combo->Bind(wxEVT_COMBOBOX, [this](wxCommandEvent& event) {
             UpdateDirtyState();
             event.Skip();
         });
