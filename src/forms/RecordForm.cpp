@@ -86,7 +86,7 @@ wxTextCtrl* RecordForm::AddTextField(const wxString& label, const wxString& init
 wxChoice* RecordForm::AddChoiceField(const wxString& label, const wxArrayString& choices,
                                      int initialSelection) {
     auto* control = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, choices);
-    if (initialSelection >= 0 && initialSelection < static_cast<int>(choices.size())) {
+    if (initialSelection >= 0 && initialSelection < choices.GetCount()) {
         control->SetSelection(initialSelection);
     } else if (choices.IsEmpty()) {
         control->SetSelection(wxNOT_FOUND);
@@ -211,7 +211,8 @@ void RecordForm::DiscardChanges() {
             static_cast<wxTextCtrl*>(field.control)->ChangeValue(field.baselineValue);
             break;
         case TrackedKind::Choice: {
-            const long selection = wxAtol(field.baselineValue);
+            long selection = wxNOT_FOUND;
+            field.baselineValue.ToLong(&selection);
             static_cast<wxChoice*>(field.control)->SetSelection(static_cast<int>(selection));
             break;
         }
