@@ -331,7 +331,7 @@ inline std::optional<bool> CheckMemberNameAndWarn(
         HasDuplicateMemberName(db, name, excludedMemberId, outError);
     if (duplicate && *duplicate) {
         wxMessageBox(MemberDuplicateNameWarningMessage() +
-                         "\\n\\nNames are not required to be unique; you may continue saving.",
+                         "\n\nNames are not required to be unique; you may continue saving.",
                      "Possible Duplicate Member Name", wxOK | wxICON_WARNING, parent);
     }
     return duplicate;
