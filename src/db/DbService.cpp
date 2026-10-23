@@ -1,10 +1,61 @@
 #include "DbService.h"
 
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+
 #include <wx/datetime.h>
 #include <wx/filefn.h>
 #include <wx/filename.h>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+#endif
+
 namespace msms {
+namespace {
+
+wxString NormalizeFullPath(const wxString& path) {
+    wxFileName file(path);
+    file.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
+    return file.GetFullPath();
+}
+
+bool AtomicReplaceFile(const wxString& stagedPath, const wxString& workingPath,
+                       wxString* outError) {
+#ifdef _WIN32
+    const wxScopedWCharBuffer stagedWide = stagedPath.wc_str();
+    const wxScopedWCharBuffer workingWide = workingPath.wc_str();
+    if (MoveFileExW(stagedWide.data(), workingWide.data(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        return true;
+    }
+    if (outError) {
+        *outError = wxString::Format("Atomic file replacement failed (Windows error %lu).",
+                                     static_cast<unsigned long>(GetLastError()));
+    }
+#else
+    const wxScopedCharBuffer stagedUtf8 = stagedPath.ToUTF8();
+    const wxScopedCharBuffer workingUtf8 = workingPath.ToUTF8();
+    if (std::rename(stagedUtf8.data(), workingUtf8.data()) == 0) {
+        return true;
+    }
+    if (outError) {
+        *outError = wxString::Format("Atomic file replacement failed (system error %d: %s).",
+                                     errno, wxString::FromUTF8(std::strerror(errno)));
+    }
+#endif
+    return false;
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Statement Implementation
