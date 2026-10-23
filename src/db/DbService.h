@@ -128,7 +128,6 @@ private:
     bool m_inTransaction{false};
     void* m_nativePathLockHandle{nullptr};
     int m_nativePathLockFd{-1};
-    wxString m_pathLockPath;
     bool m_pathLockHeld{false};
     bool m_pathLockExclusive{false};
 };
