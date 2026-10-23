@@ -416,6 +416,24 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
         return false;
     }
 
+    if (destPath.IsEmpty()) {
+        if (outError) {
+            *outError = "A destination path is required for the database backup.";
+        }
+        return false;
+    }
+
+    wxFileName sourceFile(m_dbPath);
+    wxFileName destinationFile(destPath);
+    sourceFile.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
+    destinationFile.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
+    if (sourceFile.SameAs(destinationFile)) {
+        if (outError) {
+            *outError = "The backup destination must be different from the currently open database.";
+        }
+        return false;
+    }
+
     sqlite3* destDb = nullptr;
     const wxScopedCharBuffer utf8Dest = destPath.ToUTF8();
     int rc = sqlite3_open_v2(utf8Dest.data(), &destDb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
@@ -440,23 +458,77 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
         return false;
     }
 
-    // Copy pages in chunks of 100 pages per step
+    // Copy pages in chunks. Retry brief SQLITE_BUSY/SQLITE_LOCKED responses,
+    // but avoid an unbounded wait if another connection continuously blocks us.
+    int busyRetries = 0;
     do {
         rc = sqlite3_backup_step(backup, 100);
         if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
+            ++busyRetries;
+            if (busyRetries >= 200) {
+                break;
+            }
             sqlite3_sleep(25);
+        } else if (rc == SQLITE_OK) {
+            busyRetries = 0;
         }
     } while (rc == SQLITE_OK || rc == SQLITE_BUSY || rc == SQLITE_LOCKED);
 
-    int finishRc = sqlite3_backup_finish(backup);
-
-    bool success = (rc == SQLITE_DONE) && (finishRc == SQLITE_OK);
-    if (!success && outError) {
-        *outError = wxString::FromUTF8(sqlite3_errmsg(destDb));
+    const int finishRc = sqlite3_backup_finish(backup);
+    const bool copyCompleted = (rc == SQLITE_DONE) && (finishRc == SQLITE_OK);
+    if (!copyCompleted) {
+        const wxString backupError = wxString::FromUTF8(sqlite3_errmsg(destDb));
+        sqlite3_close_v2(destDb);
+        if (outError) {
+            *outError = wxString("SQLite online backup did not complete successfully: ") +
+                        backupError;
+        }
+        return false;
     }
 
-    sqlite3_close_v2(destDb);
-    return success;
+    const int closeRc = sqlite3_close_v2(destDb);
+    if (closeRc != SQLITE_OK) {
+        if (outError) {
+            *outError = wxString::Format(
+                "The backup pages were copied, but the destination could not be closed "
+                "for verification (SQLite code %d).",
+                closeRc);
+        }
+        return false;
+    }
+
+    // Do not report success until the completed file can be reopened and passes
+    // both SQLite's integrity check and the application's required-schema check.
+    DbService verifier;
+    wxString verificationError;
+    if (!verifier.Open(destPath, &verificationError)) {
+        if (outError) {
+            *outError = wxString("The backup copy could not be reopened for verification: ") +
+                        verificationError;
+        }
+        return false;
+    }
+
+    if (!verifier.CheckIntegrity(&verificationError)) {
+        verifier.Close();
+        if (outError) {
+            *outError = wxString("The backup copy failed its integrity check: ") +
+                        verificationError;
+        }
+        return false;
+    }
+
+    if (!verifier.CheckCompatibility(&verificationError)) {
+        verifier.Close();
+        if (outError) {
+            *outError = wxString("The backup copy failed the database schema check: ") +
+                        verificationError;
+        }
+        return false;
+    }
+
+    verifier.Close();
+    return true;
 }
 
 bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
