@@ -904,11 +904,9 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
     const wxString currentDbPath = m_dbPath;
     const wxString workingPath = NormalizeFullPath(currentDbPath);
     const wxString candidatePath = NormalizeFullPath(backupPath);
-    wxFileName workingFile(workingPath);
-    wxFileName candidateFile(candidatePath);
-    if (workingFile.SameAs(candidateFile)) {
+    if (SameFileIdentity(workingPath, candidatePath)) {
         if (outError) {
-            *outError = "The selected backup is the currently open database.";
+            *outError = "The selected backup is the currently open database (or an alias of it).";
         }
         return false;
     }
@@ -927,24 +925,65 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
         return true;
     };
 
-    // Validate before acquiring the exclusive working-database lock or creating
-    // any safety files, so a bad candidate cannot disrupt a live database.
+    wxFileName currentFn(workingPath);
+
+    // Open and snapshot the chosen backup exactly once while holding its shared
+    // path lock. SQLite's online backup API gives us a consistent private copy,
+    // even if writes occur on the source database while the snapshot is made.
+    DbService candidateSource;
     wxString candidateError;
-    if (!verifyDatabaseFile(candidatePath, &candidateError)) {
+    if (!candidateSource.Open(candidatePath, &candidateError)) {
         if (outError) {
-            *outError = wxString("The selected backup is not a valid MSMS database: ") +
-                        candidateError;
+            *outError = wxString("The selected backup could not be opened: ") + candidateError;
         }
         return false;
     }
 
-    // Every DbService connection holds a shared OS lock on <db>.msms.lock.
-    // Restore must upgrade that lock to exclusive; if another app instance has
-    // the database open, the upgrade fails and the file is never replaced.
+    const wxString tempPrefix =
+        currentFn.GetPathWithSep() + "." + currentFn.GetFullName() + ".restore.tmp.";
+    const wxString tempPath = wxFileName::CreateTempFileName(tempPrefix);
+    if (tempPath.IsEmpty()) {
+        candidateSource.Close();
+        if (outError) {
+            *outError = "Could not create a temporary restore file beside the working database.";
+        }
+        return false;
+    }
+
+    if (!candidateSource.BackupTo(tempPath, &candidateError)) {
+        candidateSource.Close();
+        RemoveEphemeralPathLock(tempPath);
+        wxRemoveFile(tempPath);
+        if (outError) {
+            *outError = wxString("Could not snapshot the selected backup: ") + candidateError;
+        }
+        return false;
+    }
+    candidateSource.Close();
+
+    wxString snapshotError;
+    if (!verifyDatabaseFile(tempPath, &snapshotError)) {
+        RemoveEphemeralPathLock(tempPath);
+        wxRemoveFile(tempPath);
+        if (outError) {
+            *outError = wxString("The selected backup snapshot failed integrity or schema "
+                                 "validation: ") +
+                        snapshotError;
+        }
+        return false;
+    }
+    // The snapshot is private and will be installed as-is; its temporary lock
+    // file is no longer needed once the verifier has closed.
+    RemoveEphemeralPathLock(tempPath);
+
+    // Every DbService connection holds a shared OS lock on the database's sidecar
+    // lock file. Restore upgrades its own lock to exclusive; if another app
+    // instance has this database open, restore aborts before creating the safety copy.
     wxString lockError;
     if (!ChangePathLockMode(true, &lockError)) {
+        wxRemoveFile(tempPath);
         if (!m_pathLockHeld) {
-            // The OS lock mode transition failed to reacquire the prior shared
+            // The OS lock-mode transition failed to reacquire the prior shared
             // lock. Drop this SQLite handle before releasing the lock file, then
             // try to reconnect through the normal coordinated Open path.
             CloseConnectionPreservingPathLock();
@@ -967,6 +1006,9 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
     }
 
     const auto releaseExclusiveAndReopenOriginal = [&](const wxString& failure) {
+        RemoveEphemeralPathLock(tempPath);
+        wxRemoveFile(tempPath);
+
         // No database connection is allowed to remain open during the lock-mode
         // transition. Another restore may win the lock race, but then Open will
         // refuse to attach to a stale path while that restore is in progress.
@@ -987,16 +1029,16 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
         return false;
     };
 
-    // The exclusive coordination lock is now held, so cooperative MSMS Manager
-    // instances cannot start or continue using the working database. Take the
-    // safety snapshot only after obtaining that lock to include all earlier writes.
-    wxFileName currentFn(workingPath);
+    // The exclusive coordination lock is now held, so no other coordinated
+    // application instance can write to or replace the working database.
+    // Snapshot its latest state only after acquiring that lock.
     const wxString timestamp = wxDateTime::Now().Format("%Y%m%d_%H%M%S");
     const wxString safetyBase =
         currentFn.GetPathWithSep() + currentFn.GetFullName() + ".backup." + timestamp;
     wxString safetyPath = safetyBase;
     unsigned int safetySuffix = 1;
-    while (wxFileExists(safetyPath) || NormalizeFullPath(safetyPath) == candidatePath) {
+    while (wxFileExists(safetyPath) || wxFileExists(PathLockFileName(safetyPath)) ||
+           NormalizeFullPath(safetyPath) == candidatePath) {
         safetyPath = safetyBase + wxString::Format("_%02u", safetySuffix++);
     }
 
@@ -1006,46 +1048,18 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
             wxString("Failed to create the timestamped safety copy: ") + safetyError);
     }
 
-    // Stage in the same directory as the working database, then verify the
-    // staged copy before any replacement. The rename below is an OS-level
-    // same-filesystem atomic replacement operation.
-    const wxString tempPrefix =
-        currentFn.GetPathWithSep() + "." + currentFn.GetFullName() + ".restore.tmp.";
-    const wxString tempPath = wxFileName::CreateTempFileName(tempPrefix);
-    if (tempPath.IsEmpty()) {
-        return releaseExclusiveAndReopenOriginal(
-            "Could not create a temporary restore file beside the working database.");
-    }
-
-    if (!wxCopyFile(candidatePath, tempPath, true)) {
-        wxRemoveFile(tempPath);
-        return releaseExclusiveAndReopenOriginal(
-            "Could not copy the selected backup to the temporary restore file.");
-    }
-
-    wxString stagedError;
-    if (!verifyDatabaseFile(tempPath, &stagedError)) {
-        RemoveEphemeralPathLock(tempPath);
-        wxRemoveFile(tempPath);
-        return releaseExclusiveAndReopenOriginal(
-            wxString("The staged restore file failed integrity or schema verification: ") +
-            stagedError);
-    }
-    RemoveEphemeralPathLock(tempPath);
-
-    // Close only SQLite while retaining the exclusive path lock. Thus there is
-    // no window in which another cooperative process can open or write the old file.
+    // The already-verified temporary snapshot is in the same directory as the
+    // working database. Close only SQLite while retaining the exclusive path lock,
+    // then atomically replace the working file with that exact snapshot.
     CloseConnectionPreservingPathLock();
     wxString replaceError;
     if (!AtomicReplaceFile(tempPath, workingPath, &replaceError)) {
-        wxRemoveFile(tempPath);
         return releaseExclusiveAndReopenOriginal(
             wxString("Could not atomically replace the working database: ") + replaceError);
     }
 
-    // The file is now replaced while the exclusive lock is held. Release the
-    // lock only with the SQLite connection closed, then Open acquires a fresh
-    // shared lock before it attaches to the path.
+    // Release the exclusive lock only while no SQLite connection is open. Open
+    // acquires a fresh shared lock before connecting to the replacement path.
     ReleasePathLock();
 
     wxString activationError;
@@ -1069,8 +1083,8 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
     wxString recoveryLockError;
     if (!AcquirePathLock(workingPath, true, &recoveryLockError)) {
         if (outError) {
-            *outError = wxString("The backup was installed but the restored database could not "
-                                 "be activated: ") +
+            *outError = wxString("The backup snapshot was installed but the restored database "
+                                 "could not be activated: ") +
                         activationError + "\n\nThe previous database is preserved at: " +
                         safetyPath + "\nCould not safely roll back because another process "
                                      "holds the working database lock: " +
@@ -1106,6 +1120,7 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
         recovered = AtomicReplaceFile(recoveryPath, workingPath, &recoveryError);
     }
     if (!recovered) {
+        RemoveEphemeralPathLock(recoveryPath);
         wxRemoveFile(recoveryPath);
         ReleasePathLock();
         if (outError) {
