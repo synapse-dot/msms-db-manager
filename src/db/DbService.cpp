@@ -458,19 +458,18 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
         return false;
     }
 
-    // Copy pages in chunks. Retry brief SQLITE_BUSY/SQLITE_LOCKED responses,
-    // but avoid an unbounded wait if another connection continuously blocks us.
-    int busyRetries = 0;
+    // Copy pages in chunks. Count BUSY/LOCKED retries across the entire
+    // operation: successful page-copy steps must not reset the overall budget.
+    // This bounds total lock-retry time even when locks recur intermittently.
+    int totalBusyRetries = 0;
     do {
         rc = sqlite3_backup_step(backup, 100);
         if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
-            ++busyRetries;
-            if (busyRetries >= 200) {
+            ++totalBusyRetries;
+            if (totalBusyRetries >= 200) {
                 break;
             }
             sqlite3_sleep(25);
-        } else if (rc == SQLITE_OK) {
-            busyRetries = 0;
         }
     } while (rc == SQLITE_OK || rc == SQLITE_BUSY || rc == SQLITE_LOCKED);
 
