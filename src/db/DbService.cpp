@@ -848,7 +848,9 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
     const wxString currentDbPath = m_dbPath;
     const wxString workingPath = NormalizeFullPath(currentDbPath);
     const wxString candidatePath = NormalizeFullPath(backupPath);
-    if (workingPath == candidatePath) {
+    wxFileName workingFile(workingPath);
+    wxFileName candidateFile(candidatePath);
+    if (workingFile.SameAs(candidateFile)) {
         if (outError) {
             *outError = "The selected backup is the currently open database.";
         }
@@ -1034,8 +1036,13 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
     }
 
     wxString recoveryError;
-    bool recovered = wxCopyFile(safetyPath, recoveryPath, true) &&
-                     verifyDatabaseFile(recoveryPath, &recoveryError);
+    bool recovered = wxCopyFile(safetyPath, recoveryPath, true);
+    if (!recovered) {
+        recoveryError = "Could not copy the verified safety database to a recovery file.";
+    }
+    if (recovered) {
+        recovered = verifyDatabaseFile(recoveryPath, &recoveryError);
+    }
     if (recovered) {
         recovered = AtomicReplaceFile(recoveryPath, workingPath, &recoveryError);
     }
