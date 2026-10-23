@@ -442,6 +442,18 @@ TEST_CASE(
         REQUIRE(db.RestoreFrom(validBackupPath, &error));
         REQUIRE(db.IsOpen());
         CHECK(GetRowCount(db, "members") == 10);
+
+        // Remove the safety copy created by the successful retry above.
+        wxFileName workFn(workingDbPath);
+        workFn.Normalize(wxPATH_NORM_ABSOLUTE);
+        wxDir workDir(workFn.GetPath());
+        wxString matchedFile;
+        bool hasSafetyFile = workDir.GetFirst(
+            &matchedFile, workFn.GetFullName() + ".backup.*", wxDIR_FILES);
+        while (hasSafetyFile) {
+            wxRemoveFile(workFn.GetPathWithSep() + matchedFile);
+            hasSafetyFile = workDir.GetNext(&matchedFile);
+        }
     }
 
     SECTION("Successful restore creates timestamped safety copy and recovers state") {
