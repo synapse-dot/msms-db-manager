@@ -762,7 +762,18 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
     // replacement step. Until this point the working database file is untouched.
     if (!wxRenameFile(tempPath, workingPath, true)) {
         wxRemoveFile(tempPath);
-        return failBeforeReplace("Atomic replacement of the working database failed.");
+        wxString recoveryError;
+        if (restoreSafetyCopy(&recoveryError)) {
+            if (outError) {
+                *outError = "Atomic replacement of the working database failed. The previous "
+                            "database was restored from the safety copy.";
+            }
+        } else if (outError) {
+            *outError = wxString("Atomic replacement of the working database failed. Safety-copy "
+                                 "recovery also failed: ") +
+                        recoveryError + "\nThe safety copy remains at: " + safetyPath;
+        }
+        return false;
     }
 
     // Open() verifies PRAGMA foreign_keys = 1. Re-check integrity and schema
