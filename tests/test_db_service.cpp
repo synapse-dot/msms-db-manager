@@ -419,6 +419,31 @@ TEST_CASE(
         CHECK_FALSE(workDir.GetFirst(&matchedFile, safetyPattern, wxDIR_FILES));
     }
 
+    SECTION("Restore is refused while another DbService connection holds the database open") {
+        msms::DbService otherInstance;
+        REQUIRE(otherInstance.Open(workingDbPath, &error));
+        REQUIRE(otherInstance.IsOpen());
+
+        CHECK_FALSE(db.RestoreFrom(validBackupPath, &error));
+        CHECK(error.Contains("another MSMS Manager instance"));
+        REQUIRE(db.IsOpen());
+        REQUIRE(otherInstance.IsOpen());
+        CHECK(GetRowCount(db, "members") == 10);
+        CHECK(GetRowCount(otherInstance, "members") == 10);
+
+        wxFileName workFn(workingDbPath);
+        workFn.Normalize(wxPATH_NORM_ABSOLUTE);
+        wxDir workDir(workFn.GetPath());
+        wxString matchedFile;
+        const wxString safetyPattern = workFn.GetFullName() + ".backup.*";
+        CHECK_FALSE(workDir.GetFirst(&matchedFile, safetyPattern, wxDIR_FILES));
+
+        otherInstance.Close();
+        REQUIRE(db.RestoreFrom(validBackupPath, &error));
+        REQUIRE(db.IsOpen());
+        CHECK(GetRowCount(db, "members") == 10);
+    }
+
     SECTION("Successful restore creates timestamped safety copy and recovers state") {
         // Mutate working database: add a new member and delete one activity
         REQUIRE(db.Execute("INSERT INTO members (name, status, join_date) VALUES ('Temporary "
