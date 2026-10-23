@@ -434,18 +434,32 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
         return false;
     }
 
+    const wxString finalPath = destinationFile.GetFullPath();
+    const wxString tempPrefix =
+        destinationFile.GetPathWithSep() + "." + destinationFile.GetFullName() + ".tmp.";
+    const wxString tempPath = wxFileName::CreateTempFileName(tempPrefix);
+    if (tempPath.IsEmpty()) {
+        if (outError) {
+            *outError = "Could not create a temporary backup file beside the destination.";
+        }
+        return false;
+    }
+
+    // Build the backup at a temporary path. An existing destination must not be
+    // replaced until the copied database has been closed and fully verified.
     sqlite3* destDb = nullptr;
-    const wxScopedCharBuffer utf8Dest = destPath.ToUTF8();
+    const wxScopedCharBuffer utf8Dest = tempPath.ToUTF8();
     int rc = sqlite3_open_v2(utf8Dest.data(), &destDb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
                              nullptr);
     if (rc != SQLITE_OK || !destDb) {
         if (outError) {
             *outError = destDb ? wxString::FromUTF8(sqlite3_errmsg(destDb))
-                               : "Failed to open destination backup database file.";
+                               : "Failed to open temporary backup database file.";
         }
         if (destDb) {
             sqlite3_close_v2(destDb);
         }
+        wxRemoveFile(tempPath);
         return false;
     }
 
@@ -455,6 +469,7 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
             *outError = wxString::FromUTF8(sqlite3_errmsg(destDb));
         }
         sqlite3_close_v2(destDb);
+        wxRemoveFile(tempPath);
         return false;
     }
 
@@ -478,6 +493,7 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
     if (!copyCompleted) {
         const wxString backupError = wxString::FromUTF8(sqlite3_errmsg(destDb));
         sqlite3_close_v2(destDb);
+        wxRemoveFile(tempPath);
         if (outError) {
             *outError = wxString("SQLite online backup did not complete successfully: ") +
                         backupError;
@@ -487,20 +503,22 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
 
     const int closeRc = sqlite3_close_v2(destDb);
     if (closeRc != SQLITE_OK) {
+        wxRemoveFile(tempPath);
         if (outError) {
             *outError = wxString::Format(
-                "The backup pages were copied, but the destination could not be closed "
+                "The backup pages were copied, but the temporary destination could not be closed "
                 "for verification (SQLite code %d).",
                 closeRc);
         }
         return false;
     }
 
-    // Do not report success until the completed file can be reopened and passes
-    // both SQLite's integrity check and the application's required-schema check.
+    // Do not report success until the completed temporary file can be reopened
+    // and passes both SQLite integrity and application schema checks.
     DbService verifier;
     wxString verificationError;
-    if (!verifier.Open(destPath, &verificationError)) {
+    if (!verifier.Open(tempPath, &verificationError)) {
+        wxRemoveFile(tempPath);
         if (outError) {
             *outError = wxString("The backup copy could not be reopened for verification: ") +
                         verificationError;
@@ -510,6 +528,7 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
 
     if (!verifier.CheckIntegrity(&verificationError)) {
         verifier.Close();
+        wxRemoveFile(tempPath);
         if (outError) {
             *outError = wxString("The backup copy failed its integrity check: ") +
                         verificationError;
@@ -519,6 +538,7 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
 
     if (!verifier.CheckCompatibility(&verificationError)) {
         verifier.Close();
+        wxRemoveFile(tempPath);
         if (outError) {
             *outError = wxString("The backup copy failed the database schema check: ") +
                         verificationError;
@@ -527,6 +547,17 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
     }
 
     verifier.Close();
+
+    // Replace the chosen destination only after all checks passed. This keeps a
+    // pre-existing good backup intact when copying or verification fails.
+    if (!wxRenameFile(tempPath, finalPath, true)) {
+        wxRemoveFile(tempPath);
+        if (outError) {
+            *outError = "The verified backup could not be moved to the selected destination.";
+        }
+        return false;
+    }
+
     return true;
 }
 
