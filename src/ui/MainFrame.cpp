@@ -1115,8 +1115,12 @@ void MainFrame::OnRestoreBackup(wxCommandEvent& /*event*/) {
         const wxString restoreError = error;
         if (!m_dbService.IsOpen()) {
             wxString reopenError;
-            if (!ReopenDatabase(activePath, &reopenError)) {
-                error = restoreError + "\n\nCould not reopen the working database: " + reopenError;
+            if (!ReopenDatabase(activePath, &reopenError) ||
+                !m_dbService.CheckIntegrity(&reopenError)) {
+                m_dbService.Close();
+                UpdateTitle();
+                error = restoreError + "\n\nCould not reopen a verified working database: " +
+                        reopenError;
             } else {
                 error = restoreError;
             }
