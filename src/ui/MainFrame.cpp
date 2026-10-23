@@ -432,9 +432,7 @@ wxWindow* MainFrame::CreateRecordTablePage(const wxString& pageTitle) {
         auto statement = m_dbService.Prepare(sql, &error);
         if (!statement) {
             ShowDatabaseError(this, "Database Query Error",
-                              wxString("Could not load table data:
-
-") + error);
+                              wxString("Could not load table data:\n\n") + error);
             return rows;
         }
 
@@ -535,9 +533,7 @@ wxWindow* MainFrame::CreateRecordTablePage(const wxString& pageTitle) {
                 &error);
             if (!typeStatement) {
                 ShowDatabaseError(this, "Database Query Error",
-                                  wxString("Could not load activity types:
-
-") + error);
+                                  wxString("Could not load activity types:\n\n") + error);
             } else {
                 while (typeStatement->Step()) {
                     const wxString type = typeStatement->GetText(0);
