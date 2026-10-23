@@ -4,6 +4,7 @@
 #include <wx/filename.h>
 
 #include "db/DbService.h"
+#include "util/ErrorReporter.h"
 #include "util/Validation.h"
 
 namespace {
@@ -188,4 +189,10 @@ TEST_CASE("Competition duplicate check mirrors UNIQUE title/year and can exclude
     REQUIRE(msms::validation::IsCompetitionDuplicateConstraint(SQLITE_CONSTRAINT_UNIQUE));
     REQUIRE_FALSE(msms::validation::IsCompetitionDuplicateConstraint(SQLITE_CONSTRAINT_CHECK));
     REQUIRE(msms::validation::CompetitionDuplicateMessage().Contains("title and year"));
+
+    REQUIRE_FALSE(temporary.db.Execute(
+        "INSERT INTO external_competitions (title, year) VALUES ('Modelling Challenge', 2026);",
+        &error));
+    const auto reported = msms::ErrorReporter::Report(temporary.db, "saving competition");
+    REQUIRE(reported.plainExplanation.Contains("title and year"));
 }
