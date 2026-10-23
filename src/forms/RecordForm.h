@@ -8,6 +8,7 @@
 
 #include <wx/button.h>
 #include <wx/choice.h>
+#include <wx/combobox.h>
 #include <wx/datectrl.h>
 #include <wx/datetime.h>
 #include <wx/panel.h>
@@ -66,6 +67,8 @@ protected:
                              long style = 0);
     wxChoice* AddChoiceField(const wxString& label, const wxArrayString& choices,
                              int initialSelection = 0);
+    wxComboBox* AddComboField(const wxString& label, const wxArrayString& choices,
+                              const wxString& initialValue = wxEmptyString);
     wxDatePickerCtrl* AddDateField(const wxString& label,
                                    const wxDateTime& initialValue = wxDefaultDateTime);
     wxTimePickerCtrl* AddTimeField(const wxString& label,
@@ -89,6 +92,7 @@ private:
     enum class TrackedKind {
         Text,
         Choice,
+        Combo,
         Date,
         Time
     };

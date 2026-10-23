@@ -96,6 +96,15 @@ wxChoice* RecordForm::AddChoiceField(const wxString& label, const wxArrayString&
     return control;
 }
 
+wxComboBox* RecordForm::AddComboField(const wxString& label, const wxArrayString& choices,
+                                          const wxString& initialValue) {
+    auto* control = new wxComboBox(this, wxID_ANY, initialValue, wxDefaultPosition,
+                                   wxDefaultSize, choices, wxCB_DROPDOWN | wxTE_PROCESS_ENTER);
+    AddFieldRow(label, control);
+    TrackField(control);
+    return control;
+}
+
 wxDatePickerCtrl* RecordForm::AddDateField(const wxString& label,
                                            const wxDateTime& initialValue) {
     auto* control = new wxDatePickerCtrl(this, wxID_ANY, initialValue, wxDefaultPosition,
@@ -122,7 +131,19 @@ bool RecordForm::TrackField(wxWindow* control) {
     TrackedField field;
     field.control = control;
 
-    if (auto* text = dynamic_cast<wxTextCtrl*>(control)) {
+    // Test wxComboBox before text/choice base classes so its editable text
+    // value, rather than only its selected index, is used for dirty tracking.
+    if (auto* combo = dynamic_cast<wxComboBox*>(control)) {
+        field.kind = TrackedKind::Combo;
+        combo->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
+            UpdateDirtyState();
+            event.Skip();
+        });
+        combo->Bind(wxEVT_COMBOBOX, [this](wxCommandEvent& event) {
+            UpdateDirtyState();
+            event.Skip();
+        });
+    } else if (auto* text = dynamic_cast<wxTextCtrl*>(control)) {
         field.kind = TrackedKind::Text;
         text->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
             UpdateDirtyState();
@@ -166,6 +187,8 @@ wxString RecordForm::ReadFieldValue(const TrackedField& field) {
         return static_cast<wxTextCtrl*>(field.control)->GetValue();
     case TrackedKind::Choice:
         return wxString::Format("%d", static_cast<wxChoice*>(field.control)->GetSelection());
+    case TrackedKind::Combo:
+        return static_cast<wxComboBox*>(field.control)->GetValue();
     case TrackedKind::Date: {
         const wxDateTime value = static_cast<wxDatePickerCtrl*>(field.control)->GetValue();
         return value.IsValid() ? value.FormatISODate() : wxString{};
@@ -216,6 +239,9 @@ void RecordForm::DiscardChanges() {
             static_cast<wxChoice*>(field.control)->SetSelection(static_cast<int>(selection));
             break;
         }
+        case TrackedKind::Combo:
+            static_cast<wxComboBox*>(field.control)->ChangeValue(field.baselineValue);
+            break;
         case TrackedKind::Date:
             static_cast<wxDatePickerCtrl*>(field.control)->SetValue(field.baselineDateTime);
             break;
@@ -324,6 +350,9 @@ void RecordForm::OnDelete(wxCommandEvent& /*event*/) {
         return;
     }
 
+    // A successful delete supersedes any unsaved edits in this form. Establish
+    // a clean state before returning so navigation cannot offer to re-save it.
+    DiscardChanges();
     ReturnToParent();
 }
 

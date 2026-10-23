@@ -1,7 +1,10 @@
 #include "MainFrame.h"
 
+#include <cstdint>
 #include <functional>
 #include <optional>
+#include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -20,6 +23,7 @@
 #include <wx/treectrl.h>
 
 #include "db/DbService.h"
+#include "forms/RecordForms.h"
 #include "ui/ScopedPage.h"
 #include "ui/TablePage.h"
 
@@ -136,6 +140,20 @@ bool SameFilePath(const wxString& first, const wxString& second) {
 
 void ShowDatabaseError(wxWindow* parent, const wxString& title, const wxString& message) {
     wxMessageBox(message, title, wxOK | wxICON_ERROR, parent);
+}
+
+std::optional<std::int64_t> ParseRecordId(const wxString& text) {
+    try {
+        const std::string encoded = text.ToStdString();
+        std::size_t consumed = 0;
+        const long long value = std::stoll(encoded, &consumed, 10);
+        if (consumed != encoded.size() || value <= 0) {
+            return std::nullopt;
+        }
+        return static_cast<std::int64_t>(value);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
 }
 
 } // namespace
@@ -391,8 +409,71 @@ bool MainFrame::ConfirmLeaveActiveForm() {
 wxWindow* MainFrame::CreateNavigationPage(
     const wxString& pageTitle, bool formPage, const std::optional<wxString>& recordKey) {
     if (formPage) {
-        // The form receives the selected row key now; feature-specific fields
-        // and persistence will be implemented by the individual form views.
+        const bool recordForm =
+            pageTitle == "New / Edit Member" || pageTitle == "New / Edit Meeting" ||
+            pageTitle == "New / Edit Project" || pageTitle == "New / Edit Appointment" ||
+            pageTitle == "New / Edit Activity" || pageTitle == "New / Edit Competitions";
+
+        if (recordForm) {
+            if (!m_dbService.IsOpen()) {
+                ShowDatabaseError(this, "Database Error",
+                                  "Open a database before creating or editing records.");
+                return nullptr;
+            }
+
+            const RecordFormMode mode =
+                recordKey ? RecordFormMode::Edit : RecordFormMode::Create;
+            const auto returnToParent = [this, pageTitle]() {
+                wxString parentTitle;
+                if (pageTitle == "New / Edit Member") {
+                    parentTitle = "All Members";
+                } else if (pageTitle == "New / Edit Meeting") {
+                    parentTitle = "All Meetings";
+                } else if (pageTitle == "New / Edit Project") {
+                    parentTitle = "All Projects";
+                } else if (pageTitle == "New / Edit Appointment") {
+                    parentTitle = "All Appointments";
+                } else if (pageTitle == "New / Edit Activity") {
+                    parentTitle = "All Activities";
+                } else {
+                    parentTitle = "All Competitions";
+                }
+                ReturnToTablePage(parentTitle);
+            };
+
+            if (pageTitle == "New / Edit Appointment") {
+                return new AppointmentForm(m_workspacePanel, m_dbService, mode, recordKey,
+                                           returnToParent);
+            }
+
+            std::optional<std::int64_t> id;
+            if (recordKey) {
+                id = ParseRecordId(*recordKey);
+                if (!id) {
+                    ShowDatabaseError(this, "Invalid Record Key",
+                                      "The selected record ID is invalid. Return to its table and "
+                                      "select the record again.");
+                    return nullptr;
+                }
+            }
+
+            if (pageTitle == "New / Edit Member") {
+                return new MemberForm(m_workspacePanel, m_dbService, mode, id, returnToParent);
+            }
+            if (pageTitle == "New / Edit Meeting") {
+                return new MeetingForm(m_workspacePanel, m_dbService, mode, id, returnToParent);
+            }
+            if (pageTitle == "New / Edit Project") {
+                return new ProjectForm(m_workspacePanel, m_dbService, mode, id, returnToParent);
+            }
+            if (pageTitle == "New / Edit Activity") {
+                return new ActivityForm(m_workspacePanel, m_dbService, mode, id, returnToParent);
+            }
+            return new CompetitionForm(m_workspacePanel, m_dbService, mode, id, returnToParent);
+        }
+
+        // Relationship forms remain on their existing placeholder until their
+        // separate relationship-form implementation is added.
         return new BlankNavigationForm(m_workspacePanel, pageTitle, recordKey);
     }
 
@@ -1125,6 +1206,48 @@ void MainFrame::RefreshActiveTablePage() {
         }
         ShowDatabaseError(this, "Refresh Error",
                           "The active table could not be refreshed. Its existing view was kept.");
+    }
+}
+
+void MainFrame::ReturnToTablePage(const wxString& pageTitle) {
+    if (!m_navigationTree) {
+        return;
+    }
+
+    const wxTreeItemId root = m_navigationTree->GetRootItem();
+    std::function<wxTreeItemId(const wxTreeItemId&)> findTable =
+        [this, &findTable, &pageTitle](const wxTreeItemId& parent) -> wxTreeItemId {
+        wxTreeItemIdValue cookie;
+        for (wxTreeItemId child = m_navigationTree->GetFirstChild(parent, cookie);
+             child.IsOk(); child = m_navigationTree->GetNextChild(parent, cookie)) {
+            const auto* data = dynamic_cast<const NavigationItemData*>(
+                m_navigationTree->GetItemData(child));
+            if (data && data->IsPage() && data->PageTitle() == pageTitle &&
+                data->PageType() && *data->PageType() == NavigationPageType::Table) {
+                return child;
+            }
+            const wxTreeItemId nested = findTable(child);
+            if (nested.IsOk()) {
+                return nested;
+            }
+        }
+        return wxTreeItemId();
+    };
+
+    const wxTreeItemId target = findTable(root);
+    if (!target.IsOk()) {
+        ShowDatabaseError(this, "Navigation Error",
+                          "Could not find the parent table page: " + pageTitle);
+        return;
+    }
+
+    m_navigationTree->SelectItem(target);
+    // As with opening a form, call the controller explicitly if the native tree
+    // did not emit a selection-changing event for the programmatic selection.
+    if (m_activeNavigationItem != target && !NavigateToNavigationItem(target)) {
+        if (m_activeNavigationItem.IsOk()) {
+            m_navigationTree->SelectItem(m_activeNavigationItem);
+        }
     }
 }
 
