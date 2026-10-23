@@ -67,7 +67,7 @@ std::unique_ptr<Statement> LoadSingleRow(DbService& db, const wxString& sql, Bin
     wxString prepareError;
     auto statement = db.Prepare(sql, &prepareError);
     if (!statement) {
-        Fail(outError, wxString::Format("Could not %s:\n%s", context, prepareError));
+        Fail(outError, wxString::Format("Database query failed while %s:\n%s", context, prepareError));
         return nullptr;
     }
 
