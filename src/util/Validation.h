@@ -1,6 +1,7 @@
 #ifndef MSMS_VALIDATION_H
 #define MSMS_VALIDATION_H
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -190,7 +191,7 @@ inline bool ValidateAppointmentDateRange(const wxString& startDate,
 
 // Returns nullopt on query error, true when a duplicate is found, and false
 // otherwise. Member-name duplicates are advisory, not a uniqueness constraint.
-// Matching ignores surrounding whitespace and ASCII case.
+// Matching ignores surrounding spaces and ASCII case.
 inline std::optional<bool> HasDuplicateMemberName(
     const DbService& db, const wxString& name,
     std::optional<std::int64_t> excludedMemberId = std::nullopt,
