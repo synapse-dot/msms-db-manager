@@ -102,12 +102,14 @@ protected:
 
 private:
     bool LoadRecord(wxString* outError);
-    bool PopulateMemberChoices(std::optional<std::int64_t> assignedMemberId, wxString* outError);
+    bool PopulateMemberChoices(std::optional<std::int64_t> assignedMemberId,
+                               wxArrayString* labels, wxString* outError);
 
     DbService& m_db;
     wxString m_startDateKey;
     wxString m_officeKey;
     std::optional<std::int64_t> m_assignedMemberId;
+    wxString m_initialEndDate;
     wxTextCtrl* m_office{nullptr};
     wxChoice* m_member{nullptr};
     wxTextCtrl* m_startDate{nullptr};
