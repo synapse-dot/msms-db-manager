@@ -6,6 +6,7 @@
 #include <optional>
 #include <vector>
 
+#include <wx/button.h>
 #include <wx/choice.h>
 #include <wx/datectrl.h>
 #include <wx/datetime.h>
