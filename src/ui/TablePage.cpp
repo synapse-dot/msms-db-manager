@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <utility>
 
+#include <wx/arrstr.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 
@@ -24,11 +25,10 @@ void TablePage::BuildControls() {
     controls->Add(m_search, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
 
     if (m_options.showFilter || !m_options.filterOptions.empty()) {
-        std::vector<wxString> labels;
-        labels.reserve(m_options.filterOptions.size() + 1);
-        labels.push_back(m_options.allFilterLabel);
+        wxArrayString labels;
+        labels.Add(m_options.allFilterLabel);
         for (const auto& option : m_options.filterOptions) {
-            labels.push_back(option.label);
+            labels.Add(option.label);
         }
         m_filter = new wxChoice(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, labels);
         m_filter->SetSelection(0);
