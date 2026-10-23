@@ -117,9 +117,20 @@ private:
     bool EnableForeignKeys(wxString* outError);
     bool VerifyForeignKeys(wxString* outError);
 
+    // A sidecar OS lock coordinates database access between application processes.
+    bool AcquirePathLock(const wxString& dbPath, bool exclusive, wxString* outError);
+    bool ChangePathLockMode(bool exclusive, wxString* outError);
+    void ReleasePathLock();
+    void CloseConnectionPreservingPathLock();
+
     sqlite3* m_db{nullptr};
     wxString m_dbPath;
     bool m_inTransaction{false};
+    void* m_nativePathLockHandle{nullptr};
+    int m_nativePathLockFd{-1};
+    wxString m_pathLockPath;
+    bool m_pathLockHeld{false};
+    bool m_pathLockExclusive{false};
 };
 
 /**
