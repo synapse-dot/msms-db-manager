@@ -846,14 +846,9 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
     }
 
     const wxString currentDbPath = m_dbPath;
-    wxFileName currentFn(currentDbPath);
-    wxFileName candidateFn(backupPath);
-    currentFn.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
-    candidateFn.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
-    const wxString workingPath = currentFn.GetFullPath();
-    const wxString candidatePath = candidateFn.GetFullPath();
-
-    if (currentFn.SameAs(candidateFn)) {
+    const wxString workingPath = NormalizeFullPath(currentDbPath);
+    const wxString candidatePath = NormalizeFullPath(backupPath);
+    if (workingPath == candidatePath) {
         if (outError) {
             *outError = "The selected backup is the currently open database.";
         }
@@ -869,12 +864,13 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
             verifier.Close();
             return false;
         }
+        // Open enables foreign keys and verifies PRAGMA foreign_keys = 1.
         verifier.Close();
         return true;
     };
 
-    // Validate the selected candidate before creating a safety copy or touching
-    // the active connection. The staged copy is verified again before replacement.
+    // Validate before acquiring the exclusive working-database lock or creating
+    // any safety files, so a bad candidate cannot disrupt a live database.
     wxString candidateError;
     if (!verifyDatabaseFile(candidatePath, &candidateError)) {
         if (outError) {
@@ -884,178 +880,169 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
         return false;
     }
 
-    // Create a unique timestamped safety copy beside the working database.
-    // Never overwrite an earlier safety copy, even if restore is run repeatedly
-    // within the same second.
+    // Every DbService connection holds a shared OS lock on <db>.msms.lock.
+    // Restore must upgrade that lock to exclusive; if another app instance has
+    // the database open, the upgrade fails and the file is never replaced.
+    wxString lockError;
+    if (!ChangePathLockMode(true, &lockError)) {
+        if (!m_pathLockHeld) {
+            // The OS lock mode transition failed to reacquire the prior shared
+            // lock. Drop this SQLite handle before releasing the lock file, then
+            // try to reconnect through the normal coordinated Open path.
+            CloseConnectionPreservingPathLock();
+            ReleasePathLock();
+            wxString reopenError;
+            if (!Open(workingPath, &reopenError) && outError) {
+                *outError = wxString("Restore cancelled because another process has the database "
+                                     "open. The connection could not be reopened yet: ") +
+                            reopenError;
+                return false;
+            }
+        }
+        if (outError) {
+            *outError = wxString("Restore cancelled: another MSMS Manager instance has this "
+                                 "database open, or another restore is in progress. Close the "
+                                 "other instance and retry.") +
+                        (lockError.IsEmpty() ? wxString() : wxString("\n\n") + lockError);
+        }
+        return false;
+    }
+
+    const auto releaseExclusiveAndReopenOriginal = [&](const wxString& failure) {
+        // No database connection is allowed to remain open during the lock-mode
+        // transition. Another restore may win the lock race, but then Open will
+        // refuse to attach to a stale path while that restore is in progress.
+        CloseConnectionPreservingPathLock();
+        ReleasePathLock();
+        wxString reopenError;
+        if (Open(workingPath, &reopenError)) {
+            if (outError) {
+                *outError = failure +
+                            "\n\nThe original database file was not replaced and the "
+                            "connection was reopened.";
+            }
+        } else if (outError) {
+            *outError = failure +
+                        "\n\nThe original database file was not replaced, but reopening it "
+                        "failed: " + reopenError;
+        }
+        return false;
+    };
+
+    // The exclusive coordination lock is now held, so cooperative MSMS Manager
+    // instances cannot start or continue using the working database. Take the
+    // safety snapshot only after obtaining that lock to include all earlier writes.
+    wxFileName currentFn(workingPath);
     const wxString timestamp = wxDateTime::Now().Format("%Y%m%d_%H%M%S");
     const wxString safetyBase =
         currentFn.GetPathWithSep() + currentFn.GetFullName() + ".backup." + timestamp;
     wxString safetyPath = safetyBase;
     unsigned int safetySuffix = 1;
-    while (wxFileExists(safetyPath) || wxFileName(safetyPath).SameAs(candidateFn)) {
+    while (wxFileExists(safetyPath) || NormalizeFullPath(safetyPath) == candidatePath) {
         safetyPath = safetyBase + wxString::Format("_%02u", safetySuffix++);
     }
 
     wxString safetyError;
     if (!BackupTo(safetyPath, &safetyError)) {
-        if (outError) {
-            *outError = wxString("Failed to create the timestamped safety copy: ") + safetyError;
-        }
-        return false;
+        return releaseExclusiveAndReopenOriginal(
+            wxString("Failed to create the timestamped safety copy: ") + safetyError);
     }
 
-    const auto openAndVerifyWorkingDatabase = [&](const wxString& path, wxString* error) {
-        wxString localError;
-        if (!Open(path, &localError)) {
-            if (error) {
-                *error = localError;
-            }
-            return false;
-        }
-        if (!CheckIntegrity(&localError) || !CheckCompatibility(&localError)) {
-            Close();
-            if (error) {
-                *error = localError;
-            }
-            return false;
-        }
-        // Open() enables foreign-key enforcement and verifies PRAGMA foreign_keys = 1.
-        return true;
-    };
-
-    const auto restoreSafetyCopy = [&](wxString* error) {
-        Close();
-
-        const wxString recoveryPrefix =
-            currentFn.GetPathWithSep() + "." + currentFn.GetFullName() + ".restore-recovery.";
-        const wxString recoveryPath = wxFileName::CreateTempFileName(recoveryPrefix);
-        if (recoveryPath.IsEmpty()) {
-            if (error) {
-                *error = "Could not create a temporary file for safety-copy recovery.";
-            }
-            return false;
-        }
-
-        if (!wxCopyFile(safetyPath, recoveryPath, true)) {
-            wxRemoveFile(recoveryPath);
-            if (error) {
-                *error = "Could not copy the safety database to a recovery file.";
-            }
-            return false;
-        }
-
-        wxString verifyError;
-        if (!verifyDatabaseFile(recoveryPath, &verifyError)) {
-            wxRemoveFile(recoveryPath);
-            if (error) {
-                *error = wxString("The safety-copy recovery file failed verification: ") +
-                         verifyError;
-            }
-            return false;
-        }
-
-        if (!wxRenameFile(recoveryPath, workingPath, true)) {
-            wxRemoveFile(recoveryPath);
-            if (error) {
-                *error = "Could not atomically restore the safety copy to the working path.";
-            }
-            return false;
-        }
-
-        if (!openAndVerifyWorkingDatabase(workingPath, &verifyError)) {
-            Close();
-            if (error) {
-                *error = wxString("The safety copy was put back, but could not be reopened: ") +
-                         verifyError;
-            }
-            return false;
-        }
-        return true;
-    };
-
-    const auto failBeforeReplace = [&](const wxString& failure) {
-        wxString recoveryNote;
-        if (openAndVerifyWorkingDatabase(workingPath, &recoveryNote)) {
-            if (outError) {
-                *outError = failure +
-                            "\n\nThe original database file was left unchanged and the "
-                            "connection was reopened.";
-            }
-            return false;
-        }
-
-        Close();
-        if (restoreSafetyCopy(&recoveryNote)) {
-            if (outError) {
-                *outError = failure +
-                            "\n\nThe original database could not be reopened directly, so it "
-                            "was recovered from the safety copy.";
-            }
-            return false;
-        }
-
-        if (outError) {
-            *outError = failure + "\n\nRecovery also failed: " + recoveryNote +
-                        "\nThe safety copy remains at: " + safetyPath;
-        }
-        return false;
-    };
-
-    // Close the active SQLite connection before staging and replacing its file.
-    Close();
-
+    // Stage in the same directory as the working database, then verify the
+    // staged copy before any replacement. The rename below is an OS-level
+    // same-filesystem atomic replacement operation.
     const wxString tempPrefix =
         currentFn.GetPathWithSep() + "." + currentFn.GetFullName() + ".restore.tmp.";
     const wxString tempPath = wxFileName::CreateTempFileName(tempPrefix);
     if (tempPath.IsEmpty()) {
-        return failBeforeReplace("Could not create a temporary restore file beside the working database.");
+        return releaseExclusiveAndReopenOriginal(
+            "Could not create a temporary restore file beside the working database.");
     }
 
     if (!wxCopyFile(candidatePath, tempPath, true)) {
         wxRemoveFile(tempPath);
-        return failBeforeReplace("Could not copy the selected backup to the temporary restore file.");
+        return releaseExclusiveAndReopenOriginal(
+            "Could not copy the selected backup to the temporary restore file.");
     }
 
     wxString stagedError;
     if (!verifyDatabaseFile(tempPath, &stagedError)) {
         wxRemoveFile(tempPath);
-        return failBeforeReplace(
+        return releaseExclusiveAndReopenOriginal(
             wxString("The staged restore file failed integrity or schema verification: ") +
             stagedError);
     }
 
-    // Both paths are in the same directory, so the final rename is the atomic
-    // replacement step. Until this point the working database file is untouched.
-    if (!wxRenameFile(tempPath, workingPath, true)) {
+    // Close only SQLite while retaining the exclusive path lock. Thus there is
+    // no window in which another cooperative process can open or write the old file.
+    CloseConnectionPreservingPathLock();
+    wxString replaceError;
+    if (!AtomicReplaceFile(tempPath, workingPath, &replaceError)) {
         wxRemoveFile(tempPath);
-        wxString recoveryError;
-        if (restoreSafetyCopy(&recoveryError)) {
-            if (outError) {
-                *outError = "Atomic replacement of the working database failed. The previous "
-                            "database was restored from the safety copy.";
-            }
-        } else if (outError) {
-            *outError = wxString("Atomic replacement of the working database failed. Safety-copy "
-                                 "recovery also failed: ") +
-                        recoveryError + "\nThe safety copy remains at: " + safetyPath;
+        return releaseExclusiveAndReopenOriginal(
+            wxString("Could not atomically replace the working database: ") + replaceError);
+    }
+
+    // The file is now replaced while the exclusive lock is held. Release the
+    // lock only with the SQLite connection closed, then Open acquires a fresh
+    // shared lock before it attaches to the path.
+    ReleasePathLock();
+
+    wxString activationError;
+    bool activated = Open(workingPath, &activationError);
+    if (activated &&
+        (!CheckIntegrity(&activationError) || !CheckCompatibility(&activationError))) {
+        Close();
+        activated = false;
+    }
+    if (activated) {
+        // Open already enabled and verified PRAGMA foreign_keys = 1.
+        return true;
+    }
+
+    // An unexpected post-replacement activation failure requires restoring the
+    // verified safety copy. Reacquire the exclusive path lock first; never replace
+    // the database if another process has opened it in the meantime.
+    if (IsOpen()) {
+        Close();
+    }
+    wxString recoveryLockError;
+    if (!AcquirePathLock(workingPath, true, &recoveryLockError)) {
+        if (outError) {
+            *outError = wxString("The backup was installed but the restored database could not "
+                                 "be activated: ") +
+                        activationError + "\n\nThe previous database is preserved at: " +
+                        safetyPath + "\nCould not safely roll back because another process "
+                                     "holds the working database lock: " +
+                        recoveryLockError;
         }
         return false;
     }
 
-    // Open() verifies PRAGMA foreign_keys = 1. Re-check integrity and schema
-    // after the replacement as a final guard. If activation fails, restore the
-    // safety copy rather than leaving a bad database at the working path.
-    wxString activationError;
-    if (!openAndVerifyWorkingDatabase(workingPath, &activationError)) {
-        Close();
-        wxString recoveryError;
-        if (restoreSafetyCopy(&recoveryError)) {
-            if (outError) {
-                *outError = wxString("The restored database could not be activated: ") +
-                            activationError +
-                            "\n\nThe previous database was restored from the safety copy.";
-            }
-        } else if (outError) {
+    const wxString recoveryPrefix =
+        currentFn.GetPathWithSep() + "." + currentFn.GetFullName() + ".restore-recovery.";
+    const wxString recoveryPath = wxFileName::CreateTempFileName(recoveryPrefix);
+    if (recoveryPath.IsEmpty()) {
+        ReleasePathLock();
+        if (outError) {
+            *outError = wxString("The restored database could not be activated: ") +
+                        activationError + "\n\nCould not stage the safety copy for recovery. "
+                                         "The safety copy remains at: " +
+                        safetyPath;
+        }
+        return false;
+    }
+
+    wxString recoveryError;
+    bool recovered = wxCopyFile(safetyPath, recoveryPath, true) &&
+                     verifyDatabaseFile(recoveryPath, &recoveryError);
+    if (recovered) {
+        recovered = AtomicReplaceFile(recoveryPath, workingPath, &recoveryError);
+    }
+    if (!recovered) {
+        wxRemoveFile(recoveryPath);
+        ReleasePathLock();
+        if (outError) {
             *outError = wxString("The restored database could not be activated: ") +
                         activationError + "\n\nSafety-copy recovery failed: " + recoveryError +
                         "\nThe safety copy remains at: " + safetyPath;
@@ -1063,7 +1050,26 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
         return false;
     }
 
-    return true;
+    ReleasePathLock();
+    wxString reopenError;
+    if (!Open(workingPath, &reopenError) || !CheckIntegrity(&reopenError) ||
+        !CheckCompatibility(&reopenError)) {
+        Close();
+        if (outError) {
+            *outError = wxString("The restored database could not be activated: ") +
+                        activationError + "\n\nThe previous database was copied back, but "
+                        "reopening or verification failed: " + reopenError +
+                        "\nThe safety copy remains at: " + safetyPath;
+        }
+        return false;
+    }
+
+    if (outError) {
+        *outError = wxString("The restored database could not be activated: ") +
+                    activationError + "\n\nThe previous database was restored from the "
+                    "verified safety copy.";
+    }
+    return false;
 }
 
 const char* DbService::GetEmbeddedSchemaSql() {
