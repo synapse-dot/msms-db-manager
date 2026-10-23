@@ -18,3 +18,17 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_db_service.cpp")
     endif()
     catch_discover_tests(test_db_service)
 endif()
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_validation.cpp")
+    add_executable(test_validation
+        test_validation.cpp
+    )
+    target_link_libraries(test_validation PRIVATE
+        Catch2::Catch2WithMain
+        msms_db
+    )
+    if(TARGET wxWidgets::Base)
+        target_link_libraries(test_validation PRIVATE wxWidgets::Base)
+    endif()
+    catch_discover_tests(test_validation)
+endif()
