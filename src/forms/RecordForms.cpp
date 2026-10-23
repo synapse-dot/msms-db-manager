@@ -1,5 +1,7 @@
 #include "forms/RecordForms.h"
 
+#include <algorithm>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <utility>
@@ -545,16 +547,15 @@ AppointmentForm::AppointmentForm(wxWindow* parent, DbService& db, RecordFormMode
     }
 
     m_office = AddTextField("Office *", m_officeKey);
-    auto* memberPanelChoices = new wxArrayString();
+    wxArrayString memberPanelChoices;
     wxString memberError;
-    if (!PopulateMemberChoices(m_assignedMemberId, memberPanelChoices, &memberError)) {
+    if (!PopulateMemberChoices(m_assignedMemberId, &memberPanelChoices, &memberError)) {
         m_recordLoaded = false;
         if (m_loadError.IsEmpty()) {
             m_loadError = memberError;
         }
     }
-    m_member = AddChoiceField("Member *", *memberPanelChoices, wxNOT_FOUND);
-    delete memberPanelChoices;
+    m_member = AddChoiceField("Member *", memberPanelChoices, wxNOT_FOUND);
 
     if (m_assignedMemberId) {
         const auto found = std::find(m_memberIds.begin(), m_memberIds.end(), *m_assignedMemberId);
