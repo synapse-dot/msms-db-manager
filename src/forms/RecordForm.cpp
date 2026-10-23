@@ -35,7 +35,7 @@ void RecordForm::BuildControls() {
     title->SetFont(titleFont);
     m_rootSizer->Add(title, 0, wxALL, 14);
 
-    m_fieldSizer = new wxFlexGridSizer(2, 0, 8);
+    m_fieldSizer = new wxFlexGridSizer(0, 2, 8, 0);
     m_fieldSizer->AddGrowableCol(1, 1);
     m_rootSizer->Add(m_fieldSizer, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 14);
 
