@@ -55,6 +55,79 @@ bool AtomicReplaceFile(const wxString& stagedPath, const wxString& workingPath,
     return false;
 }
 
+bool TryNativePathLock(void* handle, int fd, bool exclusive, wxString* outError) {
+#ifdef _WIN32
+    if (!handle) {
+        if (outError) {
+            *outError = "The database coordination lock is not open.";
+        }
+        return false;
+    }
+    OVERLAPPED range{};
+    DWORD flags = LOCKFILE_FAIL_IMMEDIATELY;
+    if (exclusive) {
+        flags |= LOCKFILE_EXCLUSIVE_LOCK;
+    }
+    if (LockFileEx(reinterpret_cast<HANDLE>(handle), flags, 0, 1, 0, &range)) {
+        return true;
+    }
+    if (outError) {
+        *outError = wxString::Format(
+            "The database is open in another application instance or a restore is already in "
+            "progress (Windows lock error %lu).",
+            static_cast<unsigned long>(GetLastError()));
+    }
+#else
+    if (fd < 0) {
+        if (outError) {
+            *outError = "The database coordination lock is not open.";
+        }
+        return false;
+    }
+    const int operation = (exclusive ? LOCK_EX : LOCK_SH) | LOCK_NB;
+    if (::flock(fd, operation) == 0) {
+        return true;
+    }
+    if (outError) {
+        *outError = wxString::Format(
+            "The database is open in another application instance or a restore is already in "
+            "progress (system lock error %d: %s).",
+            errno, wxString::FromUTF8(std::strerror(errno)));
+    }
+#endif
+    return false;
+}
+
+bool UnlockNativePathLock(void* handle, int fd, wxString* outError) {
+#ifdef _WIN32
+    if (!handle) {
+        return true;
+    }
+    OVERLAPPED range{};
+    if (UnlockFileEx(reinterpret_cast<HANDLE>(handle), 0, 1, 0, &range)) {
+        return true;
+    }
+    if (outError) {
+        *outError = wxString::Format("Could not release the database coordination lock "
+                                     "(Windows error %lu).",
+                                     static_cast<unsigned long>(GetLastError()));
+    }
+#else
+    if (fd < 0) {
+        return true;
+    }
+    if (::flock(fd, LOCK_UN) == 0) {
+        return true;
+    }
+    if (outError) {
+        *outError = wxString::Format("Could not release the database coordination lock "
+                                     "(system error %d: %s).",
+                                     errno, wxString::FromUTF8(std::strerror(errno)));
+    }
+#endif
+    return false;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
