@@ -1,5 +1,6 @@
 #include "DbService.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -74,6 +75,96 @@ bool SameFileIdentity(const wxString& first, const wxString& second) {
 wxString PathLockFileName(const wxString& dbPath) {
     const wxFileName databaseFile(NormalizeFullPath(dbPath));
     return databaseFile.GetPathWithSep() + "." + databaseFile.GetFullName() + ".msms.lock";
+}
+
+struct ExpectedColumn {
+    const char* name;
+    const char* type;
+    bool notNull;
+    const char* defaultValue;
+    int primaryKeyPosition;
+};
+
+const std::map<std::string, std::vector<ExpectedColumn>>& ExpectedColumns() {
+    static const std::map<std::string, std::vector<ExpectedColumn>> schema = {
+        {"members",
+         {{"member_id", "INTEGER", false, nullptr, 1},
+          {"name", "TEXT", true, nullptr, 0},
+          {"class", "TEXT", false, nullptr, 0},
+          {"phone", "TEXT", false, nullptr, 0},
+          {"email", "TEXT", false, nullptr, 0},
+          {"status", "TEXT", true, "'Active'", 0},
+          {"join_date", "TEXT", true, nullptr, 0}}},
+        {"meetings",
+         {{"meeting_id", "INTEGER", false, nullptr, 1},
+          {"title", "TEXT", true, nullptr, 0},
+          {"type", "TEXT", true, nullptr, 0},
+          {"meeting_date", "TEXT", false, nullptr, 0},
+          {"start_time", "TEXT", false, nullptr, 0},
+          {"end_time", "TEXT", false, nullptr, 0},
+          {"location", "TEXT", false, nullptr, 0}}},
+        {"meeting_attendance",
+         {{"meeting_id", "INTEGER", true, nullptr, 1},
+          {"member_id", "INTEGER", true, nullptr, 2}}},
+        {"projects",
+         {{"project_id", "INTEGER", false, nullptr, 1},
+          {"title", "TEXT", true, nullptr, 0},
+          {"status", "TEXT", true, "'Planned'", 0},
+          {"start_date", "TEXT", false, nullptr, 0},
+          {"target_end_date", "TEXT", false, nullptr, 0},
+          {"actual_end_date", "TEXT", false, nullptr, 0}}},
+        {"project_members",
+         {{"project_id", "INTEGER", true, nullptr, 1},
+          {"member_id", "INTEGER", true, nullptr, 2},
+          {"role", "TEXT", true, "'Member'", 0}}},
+        {"committee_appointments",
+         {{"start_date", "TEXT", true, nullptr, 1},
+          {"office", "TEXT", true, nullptr, 2},
+          {"member_id", "INTEGER", true, nullptr, 0},
+          {"end_date", "TEXT", false, nullptr, 0}}},
+        {"activities",
+         {{"activity_id", "INTEGER", false, nullptr, 1},
+          {"title", "TEXT", true, nullptr, 0},
+          {"type", "TEXT", true, nullptr, 0},
+          {"activity_date", "TEXT", false, nullptr, 0},
+          {"start_time", "TEXT", false, nullptr, 0},
+          {"end_time", "TEXT", false, nullptr, 0},
+          {"location", "TEXT", false, nullptr, 0}}},
+        {"external_competitions",
+         {{"competition_id", "INTEGER", false, nullptr, 1},
+          {"title", "TEXT", true, nullptr, 0},
+          {"year", "INTEGER", true, nullptr, 0}}},
+        {"competition_participants",
+         {{"competition_id", "INTEGER", true, nullptr, 1},
+          {"member_id", "INTEGER", true, nullptr, 2},
+          {"role", "TEXT", true, nullptr, 0}}}};
+    return schema;
+}
+
+wxString NormalizeSqlFragment(wxString sql) {
+    sql.MakeUpper();
+    sql.Replace(" ", "");
+    sql.Replace("\t", "");
+    sql.Replace("\r", "");
+    sql.Replace("\n", "");
+    return sql;
+}
+
+const std::map<std::string, std::vector<std::string>>& RequiredSqlFragments() {
+    static const std::map<std::string, std::vector<std::string>> fragments = {
+        {"members", {"CHECK(statusIN('Active','Former'))"}},
+        {"meetings",
+         {"CHECK(typeIN('AGM','EGM','ECM'))",
+          "CHECK(start_timeISNULLORend_timeISNULLORend_time>=start_time)"}},
+        {"projects",
+         {"CHECK(statusIN('Planned','Ongoing','Completed','Cancelled'))",
+          "CHECK(start_dateISNULLORtarget_end_dateISNULLORtarget_end_date>=start_date)",
+          "CHECK(start_dateISNULLORactual_end_dateISNULLORactual_end_date>=start_date)"}},
+        {"project_members", {"CHECK(roleIN('Member','Lead'))"}},
+        {"committee_appointments", {"CHECK(end_dateISNULLORend_date>=start_date)"}},
+        {"activities", {"CHECK(start_timeISNULLORend_timeISNULLORend_time>=start_time)"}},
+        {"external_competitions", {"UNIQUE(title,year)"}}};
+    return fragments;
 }
 
 void RemoveEphemeralPathLock(const wxString& dbPath) {
