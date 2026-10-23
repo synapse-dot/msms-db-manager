@@ -343,6 +343,8 @@ TEST_CASE(
     wxString validBackupPath = wxFileName::CreateTempFileName("msms_valid_bak_");
     wxString corruptedBackupPath = wxFileName::CreateTempFileName("msms_corrupted_bak_");
     wxString incompatibleBackupPath = wxFileName::CreateTempFileName("msms_incompatible_bak_");
+    wxString missingConstraintBackupPath =
+        wxFileName::CreateTempFileName("msms_missing_constraint_bak_");
 
     if (wxFileExists(workingDbPath))
         wxRemoveFile(workingDbPath);
@@ -352,6 +354,8 @@ TEST_CASE(
         wxRemoveFile(corruptedBackupPath);
     if (wxFileExists(incompatibleBackupPath))
         wxRemoveFile(incompatibleBackupPath);
+    if (wxFileExists(missingConstraintBackupPath))
+        wxRemoveFile(missingConstraintBackupPath);
 
     msms::DbService db;
     wxString error;
@@ -379,6 +383,21 @@ TEST_CASE(
         REQUIRE(sqlite3_exec(
                     rawDb,
                     "CREATE TABLE activities (activity_id TEXT PRIMARY KEY, title TEXT NOT NULL, "
+                    "type TEXT NOT NULL, activity_date TEXT, start_time TEXT, end_time TEXT, "
+                    "location TEXT);",
+                    nullptr, nullptr, nullptr) == SQLITE_OK);
+        REQUIRE(sqlite3_close_v2(rawDb) == SQLITE_OK);
+    }
+
+    // The columns have the correct types but the required time-order CHECK
+    // constraint is missing, which should also make the database incompatible.
+    {
+        sqlite3* rawDb = nullptr;
+        REQUIRE(sqlite3_open_v2(missingConstraintBackupPath.ToUTF8().data(), &rawDb,
+                                SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
+        REQUIRE(sqlite3_exec(
+                    rawDb,
+                    "CREATE TABLE activities (activity_id INTEGER PRIMARY KEY, title TEXT NOT NULL, "
                     "type TEXT NOT NULL, activity_date TEXT, start_time TEXT, end_time TEXT, "
                     "location TEXT);",
                     nullptr, nullptr, nullptr) == SQLITE_OK);
@@ -433,9 +452,23 @@ TEST_CASE(
         REQUIRE(db.CheckCompatibility(&error));
     }
 
-    SECTION("An incompatible candidate is rejected before making a safety copy") {
+    SECTION("A candidate with wrong column definitions is rejected before safety copy") {
         CHECK_FALSE(db.RestoreFrom(incompatibleBackupPath, &error));
-        CHECK(error.Contains("valid MSMS database"));
+        CHECK(error.Contains("must have type INTEGER"));
+        REQUIRE(db.IsOpen());
+        CHECK(GetRowCount(db, "members") == 10);
+
+        wxFileName workFn(workingDbPath);
+        workFn.Normalize(wxPATH_NORM_ABSOLUTE);
+        wxDir workDir(workFn.GetPath());
+        wxString matchedFile;
+        const wxString safetyPattern = workFn.GetFullName() + ".backup.*";
+        CHECK_FALSE(workDir.GetFirst(&matchedFile, safetyPattern, wxDIR_FILES));
+    }
+
+    SECTION("A candidate missing a required CHECK constraint is rejected before safety copy") {
+        CHECK_FALSE(db.RestoreFrom(missingConstraintBackupPath, &error));
+        CHECK(error.Contains("missing a required constraint"));
         REQUIRE(db.IsOpen());
         CHECK(GetRowCount(db, "members") == 10);
 
@@ -540,6 +573,8 @@ TEST_CASE(
         wxRemoveFile(corruptedBackupPath);
     if (wxFileExists(incompatibleBackupPath))
         wxRemoveFile(incompatibleBackupPath);
+    if (wxFileExists(missingConstraintBackupPath))
+        wxRemoveFile(missingConstraintBackupPath);
 }
 
 // ---------------------------------------------------------------------------
