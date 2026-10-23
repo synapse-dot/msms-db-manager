@@ -258,7 +258,9 @@ DbService::~DbService() {
 
 bool DbService::AcquirePathLock(const wxString& dbPath, bool exclusive, wxString* outError) {
     const wxString normalizedPath = NormalizeFullPath(dbPath);
-    const wxString lockPath = normalizedPath + ".msms.lock";
+    const wxFileName databaseFile(normalizedPath);
+    const wxString lockPath =
+        databaseFile.GetPathWithSep() + "." + databaseFile.GetFullName() + ".msms.lock";
     ReleasePathLock();
 
 #ifdef _WIN32
