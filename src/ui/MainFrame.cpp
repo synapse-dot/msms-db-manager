@@ -1077,6 +1077,24 @@ void MainFrame::OnRestoreBackup(wxCommandEvent& /*event*/) {
         return;
     }
 
+    // Resolve any pending form edits before a restore can replace the database
+    // those forms were editing.
+    if (!ConfirmLeaveActiveForm()) {
+        return;
+    }
+
+    const wxString activePath = m_dbService.GetDbPath();
+    const int answer = wxMessageBox(
+        wxString("Restoring a backup will replace all records in '") +
+            wxFileName(activePath).GetFullName() +
+            "'. A timestamped safety copy of the current database will be saved beside it first. "
+            "Only a backup that passes integrity and schema validation will be installed.\n\n"
+            "Continue to choose a backup file?",
+        "Confirm Database Restore", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this);
+    if (answer != wxYES) {
+        return;
+    }
+
     wxFileDialog dialog(
         this, "Select Database Backup", wxEmptyString, wxEmptyString,
         "SQLite Database (*.db;*.sqlite;*.sqlite3)|*.db;*.sqlite;*.sqlite3|All Files (*.*)|*.*",
@@ -1086,20 +1104,9 @@ void MainFrame::OnRestoreBackup(wxCommandEvent& /*event*/) {
     }
 
     const wxString backupPath = dialog.GetPath();
-    const wxString activePath = m_dbService.GetDbPath();
     if (SameFilePath(backupPath, activePath)) {
         ShowDatabaseError(this, "Restore Error",
                           "The selected backup is the currently open database.");
-        return;
-    }
-
-    const int answer = wxMessageBox(
-        wxString("Restore '") + wxFileName(backupPath).GetFullName() + "' over '" +
-            wxFileName(activePath).GetFullName() +
-            "'?\n\nThis replaces the current database contents. A safety copy of the current "
-            "database will be created before replacement.",
-        "Confirm Database Restore", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this);
-    if (answer != wxYES) {
         return;
     }
 
@@ -1108,14 +1115,23 @@ void MainFrame::OnRestoreBackup(wxCommandEvent& /*event*/) {
         const wxString restoreError = error;
         if (!m_dbService.IsOpen()) {
             wxString reopenError;
-            ReopenDatabase(activePath, &reopenError);
+            if (!ReopenDatabase(activePath, &reopenError)) {
+                error = restoreError + "\n\nCould not reopen the working database: " + reopenError;
+            } else {
+                error = restoreError;
+            }
+        } else {
+            error = restoreError;
         }
         ShowDatabaseError(this, "Restore Error",
-                          wxString("Could not restore the database:\n\n") + restoreError);
+                          wxString("Could not restore the database:\n\n") + error);
         return;
     }
 
     UpdateTitle();
+    ReturnToTablePage("All Members");
+    // ReturnToTablePage can be a no-op when All Members was already selected;
+    // force a refresh in that case too.
     RefreshActiveTablePage();
     wxMessageBox("Database restored successfully.", "Restore Complete",
                  wxOK | wxICON_INFORMATION, this);
