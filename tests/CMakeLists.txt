@@ -26,6 +26,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_validation.cpp")
     target_link_libraries(test_validation PRIVATE
         Catch2::Catch2WithMain
         msms_db
+        wxWidgets::Core
     )
     if(TARGET wxWidgets::Base)
         target_link_libraries(test_validation PRIVATE wxWidgets::Base)
