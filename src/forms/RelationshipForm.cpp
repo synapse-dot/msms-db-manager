@@ -140,7 +140,9 @@ RelationshipForm::RelationshipForm(wxWindow* parent, DbService& database, Relati
         if (!LoadParentAt(0, &error)) {
             wxMessageBox("The relationship list could not be loaded:\n\n" + error,
                          "Relationship Form", wxOK | wxICON_ERROR, this);
-            m_parentChoice->SetSelection(0);
+            // Leave no selection so choosing the first item again can retry
+            // the load after a transient query failure.
+            m_parentChoice->SetSelection(wxNOT_FOUND);
             m_currentParentIndex = -1;
             m_currentParentId.reset();
             m_scrolledWindow->Enable(false);
@@ -630,6 +632,7 @@ bool RelationshipForm::SaveCurrentParent(wxString* outError) {
         return Fail(outError, error);
     }
     if (!query->BindInt64(1, *m_currentParentId)) {
+        query.reset();
         transaction.Rollback(nullptr);
         return Fail(outError, "Could not bind the current parent ID.");
     }
@@ -642,6 +645,7 @@ bool RelationshipForm::SaveCurrentParent(wxString* outError) {
     }
     if (rc != SQLITE_DONE) {
         const wxString error = DatabaseError(m_database, "reading existing relationship assignments");
+        query.reset();
         transaction.Rollback(nullptr);
         return Fail(outError, error);
     }
