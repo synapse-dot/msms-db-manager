@@ -1,5 +1,7 @@
 name: CI
 
+# CI runs on ordinary pushes; maintenance-only commits may use [skip ci].
+
 on:
   push:
   pull_request:
