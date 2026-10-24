@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   windows:
-    name: Build Windows installer
+    name: Build Windows executable
     runs-on: windows-latest
     steps:
       - name: Check out source
@@ -33,42 +33,6 @@ jobs:
           }
           $version = $tag.Substring(1)
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Install NSIS
-        shell: pwsh
-        run: |
-          choco install nsis --yes --no-progress
-
-          $candidates = @(
-            "${env:ProgramFiles(x86)}\NSIS"
-            "$env:ProgramFiles\NSIS"
-          )
-
-          $nsisDir = $candidates |
-            Where-Object {
-              Test-Path -LiteralPath (Join-Path $_ 'makensis.exe') -PathType Leaf
-            } |
-            Select-Object -First 1
-
-          if (-not $nsisDir) {
-            $command = Get-Command makensis.exe -ErrorAction SilentlyContinue
-            if ($command) {
-              $nsisDir = Split-Path -Parent $command.Source
-            }
-          }
-
-          if (-not $nsisDir) {
-            throw "NSIS installation failed: makensis.exe was not found."
-          }
-
-          $makensis = Join-Path $nsisDir 'makensis.exe'
-          & $makensis /VERSION
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "NSIS compiler verification failed."
-          }
-
-          $nsisDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
       - name: Cache vcpkg static packages
         uses: actions/cache@v4
@@ -101,20 +65,18 @@ jobs:
       - name: Test
         run: ctest --preset release-windows-static --output-on-failure --timeout 120
 
-      - name: Build installer
+      - name: Package Windows executable
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force out | Out-Null
-          Copy-Item build\release-windows-static\Release\msms.exe out\msms-manager.exe
-          $binaryBytes = (Get-Item out\msms-manager.exe).Length
+          $executable = "out\MSMSManager-$env:APP_VERSION-win64.exe"
+          Copy-Item build\release-windows-static\Release\msms.exe $executable
+          $binaryBytes = (Get-Item $executable).Length
           Write-Output "Release executable size: $binaryBytes bytes"
           if ($binaryBytes -ge 15000000) { throw "Release executable exceeds the 15,000,000-byte size target." }
-          makensis "/DAPP_VERSION=$env:APP_VERSION" /DOUTPUT_DIR=out /DAPP_BINARY=out\msms-manager.exe /DLICENSE_FILE=LICENSE packaging\windows\installer.nsi
-          $installer = "out\MSMSManager-$env:APP_VERSION-win64.exe"
-          if (-not (Test-Path $installer)) { throw "NSIS did not create $installer" }
-          Get-Item $installer | Format-List Name,Length
+          Get-Item $executable | Format-List Name,Length
 
-      - name: Upload Windows installer
+      - name: Upload Windows executable
         uses: actions/upload-artifact@v4
         with:
           name: msms-release-windows
@@ -197,7 +159,7 @@ jobs:
           cd release-files
           mapfile -t windows_packages < <(find . -maxdepth 1 -type f -name 'MSMSManager-*-win64.exe' -print)
           mapfile -t linux_packages < <(find . -maxdepth 1 -type f -name 'MSMSManager-*-x86_64.AppImage' -print)
-          [[ "${#windows_packages[@]}" -eq 1 ]] || { echo "Expected exactly one Windows installer." >&2; exit 1; }
+          [[ "${#windows_packages[@]}" -eq 1 ]] || { echo "Expected exactly one Windows executable." >&2; exit 1; }
           [[ "${#linux_packages[@]}" -eq 1 ]] || { echo "Expected exactly one Linux AppImage." >&2; exit 1; }
           sha256sum "${windows_packages[0]#./}" "${linux_packages[0]#./}" > SHA256SUMS
           sha256sum --check SHA256SUMS
