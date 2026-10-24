@@ -21,11 +21,7 @@
 
 namespace msms {
 
-enum class RelationshipKind {
-    MeetingAttendance,
-    ProjectMembers,
-    CompetitionParticipants
-};
+enum class RelationshipKind { MeetingAttendance, ProjectMembers, CompetitionParticipants };
 
 // Shared editor for the many-to-many assignment tables. The selected parent
 // stays local to the form; switching it prompts before any dirty state is lost.
@@ -55,17 +51,12 @@ private:
         wxTextCtrl* competitionRole{nullptr};
     };
 
-    enum class UnsavedDecision {
-        Save,
-        Discard,
-        Cancel
-    };
+    enum class UnsavedDecision { Save, Discard, Cancel };
 
     void BuildControls();
     bool LoadParents(wxString* outError);
     bool LoadParentAt(int index, wxString* outError);
-    bool LoadMemberRows(std::int64_t parentId, std::vector<MemberRow>* rows,
-                        wxString* outError);
+    bool LoadMemberRows(std::int64_t parentId, std::vector<MemberRow>* rows, wxString* outError);
     bool SaveCurrentParent(wxString* outError);
     void RebuildChecklist(std::vector<MemberRow> rows);
     void MarkClean();

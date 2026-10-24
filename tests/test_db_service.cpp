@@ -277,7 +277,6 @@ TEST_CASE("4. Verify SQLite online backup produces a bit-for-bit coherent, valid
         wxRemoveFile(backupDbPath);
 }
 
-
 // ---------------------------------------------------------------------------
 // 4b. BackupTo must reject copies that fail the application schema validation
 // ---------------------------------------------------------------------------
@@ -307,8 +306,8 @@ TEST_CASE("BackupTo only succeeds after verifying the copied database",
     sqlite3* rawDb = nullptr;
     REQUIRE(sqlite3_open_v2(sourceDbPath.ToUTF8().data(), &rawDb,
                             SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
-    REQUIRE(sqlite3_exec(rawDb, "CREATE TABLE unrelated (id INTEGER PRIMARY KEY);",
-                         nullptr, nullptr, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_exec(rawDb, "CREATE TABLE unrelated (id INTEGER PRIMARY KEY);", nullptr,
+                         nullptr, nullptr) == SQLITE_OK);
     REQUIRE(sqlite3_close_v2(rawDb) == SQLITE_OK);
 
     msms::DbService sourceDb;
@@ -395,12 +394,13 @@ TEST_CASE(
         sqlite3* rawDb = nullptr;
         REQUIRE(sqlite3_open_v2(missingConstraintBackupPath.ToUTF8().data(), &rawDb,
                                 SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
-        REQUIRE(sqlite3_exec(
-                    rawDb,
-                    "CREATE TABLE activities (activity_id INTEGER PRIMARY KEY, title TEXT NOT NULL, "
-                    "type TEXT NOT NULL, activity_date TEXT, start_time TEXT, end_time TEXT, "
-                    "location TEXT);",
-                    nullptr, nullptr, nullptr) == SQLITE_OK);
+        REQUIRE(
+            sqlite3_exec(
+                rawDb,
+                "CREATE TABLE activities (activity_id INTEGER PRIMARY KEY, title TEXT NOT NULL, "
+                "type TEXT NOT NULL, activity_date TEXT, start_time TEXT, end_time TEXT, "
+                "location TEXT);",
+                nullptr, nullptr, nullptr) == SQLITE_OK);
         REQUIRE(sqlite3_close_v2(rawDb) == SQLITE_OK);
     }
 
@@ -427,9 +427,9 @@ TEST_CASE(
     SECTION("Restoring from a hard-link alias of the active database is rejected") {
         const wxString hardLinkPath = workingDbPath + ".hardlink";
         std::error_code linkError;
-        std::filesystem::create_hard_link(
-            std::filesystem::path(workingDbPath.ToStdString()),
-            std::filesystem::path(hardLinkPath.ToStdString()), linkError);
+        std::filesystem::create_hard_link(std::filesystem::path(workingDbPath.ToStdString()),
+                                          std::filesystem::path(hardLinkPath.ToStdString()),
+                                          linkError);
 
         if (linkError) {
             WARN("Hard-link test skipped because the filesystem refused link creation: "

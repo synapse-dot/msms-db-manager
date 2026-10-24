@@ -32,13 +32,13 @@ private:
     void OnNavigationSelectionChanging(wxTreeEvent& event);
     [[nodiscard]] bool NavigateToNavigationItem(const wxTreeItemId& item);
     [[nodiscard]] bool ConfirmLeaveActiveForm();
-    [[nodiscard]] wxWindow* CreateNavigationPage(
-        const wxString& pageTitle, bool formPage,
-        const std::optional<wxString>& recordKey = std::nullopt);
+    [[nodiscard]] wxWindow*
+    CreateNavigationPage(const wxString& pageTitle, bool formPage,
+                         const std::optional<wxString>& recordKey = std::nullopt);
     [[nodiscard]] wxWindow* CreateRecordTablePage(const wxString& pageTitle);
     [[nodiscard]] wxWindow* CreateScopedTablePage(const wxString& pageTitle);
-    [[nodiscard]] bool OpenFormFromTable(
-        const wxString& formTitle, const std::optional<wxString>& recordKey);
+    [[nodiscard]] bool OpenFormFromTable(const wxString& formTitle,
+                                         const std::optional<wxString>& recordKey);
     void RefreshActiveTablePage();
     void ReturnToTablePage(const wxString& pageTitle);
     // Replacing the current view destroys the previous workspace child. This is

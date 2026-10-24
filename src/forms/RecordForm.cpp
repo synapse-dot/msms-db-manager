@@ -6,8 +6,8 @@
 #include <wx/button.h>
 #include <wx/dateevt.h>
 #include <wx/msgdlg.h>
-#include <wx/stattext.h>
 #include <wx/sizer.h>
+#include <wx/stattext.h>
 
 #include "util/ErrorReporter.h"
 
@@ -75,9 +75,9 @@ void RecordForm::AddFieldRow(const wxString& label, wxWindow* control) {
 }
 
 wxTextCtrl* RecordForm::AddTextField(const wxString& label, const wxString& initialValue,
-                                    long style) {
-    auto* control = new wxTextCtrl(this, wxID_ANY, initialValue, wxDefaultPosition,
-                                   wxDefaultSize, style);
+                                     long style) {
+    auto* control =
+        new wxTextCtrl(this, wxID_ANY, initialValue, wxDefaultPosition, wxDefaultSize, style);
     AddFieldRow(label, control);
     TrackField(control);
     return control;
@@ -97,16 +97,15 @@ wxChoice* RecordForm::AddChoiceField(const wxString& label, const wxArrayString&
 }
 
 wxComboBox* RecordForm::AddComboField(const wxString& label, const wxArrayString& choices,
-                                          const wxString& initialValue) {
-    auto* control = new wxComboBox(this, wxID_ANY, initialValue, wxDefaultPosition,
-                                   wxDefaultSize, choices, wxCB_DROPDOWN | wxTE_PROCESS_ENTER);
+                                      const wxString& initialValue) {
+    auto* control = new wxComboBox(this, wxID_ANY, initialValue, wxDefaultPosition, wxDefaultSize,
+                                   choices, wxCB_DROPDOWN | wxTE_PROCESS_ENTER);
     AddFieldRow(label, control);
     TrackField(control);
     return control;
 }
 
-wxDatePickerCtrl* RecordForm::AddDateField(const wxString& label,
-                                           const wxDateTime& initialValue) {
+wxDatePickerCtrl* RecordForm::AddDateField(const wxString& label, const wxDateTime& initialValue) {
     auto* control = new wxDatePickerCtrl(this, wxID_ANY, initialValue, wxDefaultPosition,
                                          wxDefaultSize, wxDP_DEFAULT | wxDP_ALLOWNONE);
     AddFieldRow(label, control);
@@ -114,8 +113,7 @@ wxDatePickerCtrl* RecordForm::AddDateField(const wxString& label,
     return control;
 }
 
-wxTimePickerCtrl* RecordForm::AddTimeField(const wxString& label,
-                                           const wxDateTime& initialValue) {
+wxTimePickerCtrl* RecordForm::AddTimeField(const wxString& label, const wxDateTime& initialValue) {
     auto* control = new wxTimePickerCtrl(this, wxID_ANY, initialValue, wxDefaultPosition,
                                          wxDefaultSize, wxTP_DEFAULT);
     AddFieldRow(label, control);
@@ -316,9 +314,9 @@ void RecordForm::OnCancel(wxCommandEvent& /*event*/) {
         return;
     }
 
-    const int result = wxMessageBox(
-        "Save your changes before leaving? Choose No to discard the changes, or Cancel to stay on this form.",
-        "Unsaved Changes", wxYES_NO | wxCANCEL | wxICON_QUESTION, this);
+    const int result = wxMessageBox("Save your changes before leaving? Choose No to discard the "
+                                    "changes, or Cancel to stay on this form.",
+                                    "Unsaved Changes", wxYES_NO | wxCANCEL | wxICON_QUESTION, this);
 
     if (result == wxYES) {
         wxString error;
@@ -338,10 +336,10 @@ void RecordForm::OnDelete(wxCommandEvent& /*event*/) {
         return;
     }
 
-    const wxString prompt =
-        "Delete this record? This action cannot be undone. Records that depend on it may prevent deletion.";
+    const wxString prompt = "Delete this record? This action cannot be undone. Records that depend "
+                            "on it may prevent deletion.";
     wxMessageDialog confirmation(this, prompt, "Confirm Delete",
-                                wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
+                                 wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
     if (confirmation.ShowModal() != wxID_YES) {
         return;
     }

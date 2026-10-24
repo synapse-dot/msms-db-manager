@@ -29,28 +29,31 @@ struct RelationshipSql {
 RelationshipSql SqlFor(RelationshipKind kind) {
     switch (kind) {
     case RelationshipKind::MeetingAttendance:
-        return {
-            "meeting_attendance", "meeting_id", "member_id",
-            "SELECT member_id FROM meeting_attendance WHERE meeting_id = ?;",
-            "DELETE FROM meeting_attendance WHERE meeting_id = ? AND member_id = ?;",
-            "INSERT INTO meeting_attendance (meeting_id, member_id) VALUES (?, ?);",
-            wxString{}};
+        return {"meeting_attendance",
+                "meeting_id",
+                "member_id",
+                "SELECT member_id FROM meeting_attendance WHERE meeting_id = ?;",
+                "DELETE FROM meeting_attendance WHERE meeting_id = ? AND member_id = ?;",
+                "INSERT INTO meeting_attendance (meeting_id, member_id) VALUES (?, ?);",
+                wxString{}};
     case RelationshipKind::ProjectMembers:
-        return {
-            "project_members", "project_id", "member_id",
-            "SELECT member_id, role FROM project_members WHERE project_id = ?;",
-            "DELETE FROM project_members WHERE project_id = ? AND member_id = ?;",
-            "INSERT INTO project_members (project_id, member_id, role) VALUES (?, ?, ?);",
-            "UPDATE project_members SET role = ? WHERE project_id = ? AND member_id = ?;"};
+        return {"project_members",
+                "project_id",
+                "member_id",
+                "SELECT member_id, role FROM project_members WHERE project_id = ?;",
+                "DELETE FROM project_members WHERE project_id = ? AND member_id = ?;",
+                "INSERT INTO project_members (project_id, member_id, role) VALUES (?, ?, ?);",
+                "UPDATE project_members SET role = ? WHERE project_id = ? AND member_id = ?;"};
     case RelationshipKind::CompetitionParticipants:
-        return {
-            "competition_participants", "competition_id", "member_id",
-            "SELECT member_id, role FROM competition_participants WHERE competition_id = ?;",
-            "DELETE FROM competition_participants WHERE competition_id = ? AND member_id = ?;",
-            "INSERT INTO competition_participants (competition_id, member_id, role) "
-            "VALUES (?, ?, ?);",
-            "UPDATE competition_participants SET role = ? "
-            "WHERE competition_id = ? AND member_id = ?;"};
+        return {"competition_participants",
+                "competition_id",
+                "member_id",
+                "SELECT member_id, role FROM competition_participants WHERE competition_id = ?;",
+                "DELETE FROM competition_participants WHERE competition_id = ? AND member_id = ?;",
+                "INSERT INTO competition_participants (competition_id, member_id, role) "
+                "VALUES (?, ?, ?);",
+                "UPDATE competition_participants SET role = ? "
+                "WHERE competition_id = ? AND member_id = ?;"};
     }
     return {};
 }
@@ -67,8 +70,8 @@ wxString DatabaseError(const DbService& db, const wxString& context) {
 }
 
 template <typename Binder>
-bool ExecuteWrite(DbService& database, const wxString& sql, Binder binder,
-                  const wxString& context, wxString* outError) {
+bool ExecuteWrite(DbService& database, const wxString& sql, Binder binder, const wxString& context,
+                  wxString* outError) {
     wxString prepareError;
     auto statement = database.Prepare(sql, &prepareError);
     if (!statement) {
@@ -97,17 +100,15 @@ wxString LabelWithDate(const wxString& title, const wxString& date) {
 
 RelationshipForm::RelationshipForm(wxWindow* parent, DbService& database, RelationshipKind kind,
                                    std::function<void()> onReturnToParent)
-    : wxPanel(parent, wxID_ANY),
-      m_database(database),
-      m_kind(kind),
+    : wxPanel(parent, wxID_ANY), m_database(database), m_kind(kind),
       m_onReturnToParent(std::move(onReturnToParent)) {
     BuildControls();
 
     wxString error;
     const bool parentsLoaded = LoadParents(&error);
     if (!parentsLoaded) {
-        wxMessageBox("Parent records could not be loaded:\n\n" + error,
-                     "Relationship Form", wxOK | wxICON_ERROR, this);
+        wxMessageBox("Parent records could not be loaded:\n\n" + error, "Relationship Form",
+                     wxOK | wxICON_ERROR, this);
         m_parents.clear();
     }
 
@@ -122,10 +123,11 @@ RelationshipForm::RelationshipForm(wxWindow* parent, DbService& database, Relati
         m_saveButton->Enable(false);
         m_scrolledSizer->Clear(true);
         m_scrolledSizer->Add(
-            new wxStaticText(m_scrolledWindow, wxID_ANY,
-                             parentsLoaded
-                                 ? "Create a parent record before managing its member relationships."
-                                 : "Parent records could not be loaded. Close this view and try again."),
+            new wxStaticText(
+                m_scrolledWindow, wxID_ANY,
+                parentsLoaded
+                    ? "Create a parent record before managing its member relationships."
+                    : "Parent records could not be loaded. Close this view and try again."),
             0, wxALL, 10);
         m_scrolledSizer->Layout();
         m_scrolledWindow->FitInside();
@@ -177,8 +179,8 @@ void RelationshipForm::BuildControls() {
     parentRow->Add(m_parentChoice, 1, wxALIGN_CENTER_VERTICAL);
     root->Add(parentRow, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 12);
 
-    m_scrolledWindow = new wxScrolledWindow(
-        this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL | wxBORDER_SIMPLE);
+    m_scrolledWindow = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+                                            wxVSCROLL | wxBORDER_SIMPLE);
     m_scrolledWindow->SetScrollRate(0, 12);
     m_scrolledSizer = new wxBoxSizer(wxVERTICAL);
     m_scrolledWindow->SetSizer(m_scrolledSizer);
@@ -240,8 +242,7 @@ bool RelationshipForm::LoadParents(wxString* outError) {
         // Titles and dates are not unique in the schema. Show the record ID so
         // users can distinguish otherwise-identical parents before editing
         // the hidden relationship key.
-        record.label += wxString::Format(" [ID: %lld]",
-                                         static_cast<long long>(record.id));
+        record.label += wxString::Format(" [ID: %lld]", static_cast<long long>(record.id));
         loaded.push_back(std::move(record));
     }
 
@@ -378,19 +379,18 @@ void RelationshipForm::RebuildChecklist(std::vector<MemberRow> rows) {
             wxArrayString roles;
             roles.Add("Member");
             roles.Add("Lead");
-            row.projectRole = new wxChoice(m_scrolledWindow, wxID_ANY,
-                                           wxDefaultPosition, wxDefaultSize, roles);
-            row.projectRole->SetStringSelection(
-                row.baselineRole.IsEmpty() ? "Member" : row.baselineRole);
+            row.projectRole =
+                new wxChoice(m_scrolledWindow, wxID_ANY, wxDefaultPosition, wxDefaultSize, roles);
+            row.projectRole->SetStringSelection(row.baselineRole.IsEmpty() ? "Member"
+                                                                           : row.baselineRole);
             if (row.projectRole->GetSelection() == wxNOT_FOUND) {
                 row.projectRole->SetSelection(0);
             }
             row.projectRole->Bind(wxEVT_CHOICE, &RelationshipForm::OnRoleChanged, this);
             grid->Add(row.projectRole, 0, wxEXPAND | wxALIGN_CENTER_VERTICAL);
         } else if (m_kind == RelationshipKind::CompetitionParticipants) {
-            row.competitionRole = new wxTextCtrl(m_scrolledWindow, wxID_ANY,
-                                                 row.baselineRole, wxDefaultPosition,
-                                                 wxSize(180, -1));
+            row.competitionRole = new wxTextCtrl(m_scrolledWindow, wxID_ANY, row.baselineRole,
+                                                 wxDefaultPosition, wxSize(180, -1));
             row.competitionRole->Bind(wxEVT_TEXT, &RelationshipForm::OnRoleChanged, this);
             grid->Add(row.competitionRole, 0, wxEXPAND | wxALIGN_CENTER_VERTICAL);
         }
@@ -461,9 +461,8 @@ void RelationshipForm::DiscardChanges() {
             row.checkBox->SetValue(row.baselineChecked);
         }
         if (row.projectRole) {
-            row.projectRole->SetStringSelection(row.baselineRole.IsEmpty()
-                                                    ? "Member"
-                                                    : row.baselineRole);
+            row.projectRole->SetStringSelection(row.baselineRole.IsEmpty() ? "Member"
+                                                                           : row.baselineRole);
             if (row.projectRole->GetSelection() == wxNOT_FOUND) {
                 row.projectRole->SetSelection(0);
             }
@@ -509,7 +508,6 @@ wxString RelationshipForm::ParentEmptyPlaceholder() const {
     }
     return "No parent records available";
 }
-
 
 RelationshipForm::UnsavedDecision RelationshipForm::PromptUnsavedChanges() {
     wxDialog dialog(this, wxID_ANY, "Unsaved Changes", wxDefaultPosition, wxDefaultSize,
@@ -563,8 +561,7 @@ bool RelationshipForm::ResolveDirtyStateBeforeSwitch(int targetIndex) {
     } else {
         wxString error;
         if (!Save(&error)) {
-            wxMessageBox(error, "Could Not Save Relationships",
-                         wxOK | wxICON_ERROR, this);
+            wxMessageBox(error, "Could Not Save Relationships", wxOK | wxICON_ERROR, this);
             m_loading = true;
             m_parentChoice->SetSelection(currentIndex);
             m_loading = false;
@@ -598,7 +595,8 @@ bool RelationshipForm::Save(wxString* outError) {
         for (const auto& row : m_rows) {
             if (row.checkBox && row.checkBox->GetValue() &&
                 (!row.projectRole || row.projectRole->GetSelection() == wxNOT_FOUND)) {
-                return Fail(outError, "Choose either Member or Lead for each selected project member.");
+                return Fail(outError,
+                            "Choose either Member or Lead for each selected project member.");
             }
         }
     }
@@ -644,7 +642,8 @@ bool RelationshipForm::SaveCurrentParent(wxString* outError) {
         existing.emplace(memberId, role);
     }
     if (rc != SQLITE_DONE) {
-        const wxString error = DatabaseError(m_database, "reading existing relationship assignments");
+        const wxString error =
+            DatabaseError(m_database, "reading existing relationship assignments");
         query.reset();
         transaction.Rollback(nullptr);
         return Fail(outError, error);
@@ -748,9 +747,8 @@ void RelationshipForm::OnParentChanged(wxCommandEvent& event) {
         wxMessageBox("The selected parent could not be loaded:\n\n" + error,
                      "Could Not Switch Parent", wxOK | wxICON_ERROR, this);
         m_loading = true;
-        m_parentChoice->SetSelection(m_currentParentIndex >= 0
-                                              ? m_currentParentIndex
-                                              : wxNOT_FOUND);
+        m_parentChoice->SetSelection(m_currentParentIndex >= 0 ? m_currentParentIndex
+                                                               : wxNOT_FOUND);
         m_loading = false;
     }
     event.Skip();
