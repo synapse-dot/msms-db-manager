@@ -186,8 +186,24 @@ jobs:
           sudo apt-get update
           # Assumes ubuntu-latest provides wxWidgets 3.2 development headers.
           sudo apt-get install --yes clang-format-19 clang-tidy cmake ninja-build ccache \
-            libwxgtk3.2-dev libsqlite3-dev
+            python3-yaml libwxgtk3.2-dev libsqlite3-dev
           clang-format-19 --version
+
+      - name: Validate workflow YAML
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          files = sorted(Path(".github/workflows").glob("*.yml"))
+          if not files:
+              raise SystemExit("No GitHub Actions workflow files found.")
+          for path in files:
+              with path.open(encoding="utf-8") as stream:
+                  yaml.safe_load(stream)
+              print(f"YAML syntax OK: {path}")
+          PY
 
       - name: Check formatting
         shell: bash
