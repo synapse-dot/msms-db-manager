@@ -28,9 +28,9 @@ ShowInstDetails show
 ShowUnInstDetails show
 
 VIProductVersion "${APP_VERSION}.0"
-VIAddVersionKey /LANG=${LANG_ENGLISH} "ProductName" "${PRODUCT_NAME}"
-VIAddVersionKey /LANG=${LANG_ENGLISH} "ProductVersion" "${APP_VERSION}"
-VIAddVersionKey /LANG=${LANG_ENGLISH} "FileDescription" "${PRODUCT_NAME} installer"
+VIAddVersionKey "ProductName" "${PRODUCT_NAME}"
+VIAddVersionKey "ProductVersion" "${APP_VERSION}"
+VIAddVersionKey "FileDescription" "${PRODUCT_NAME} installer"
 
 !define MUI_ABORTWARNING
 !define MUI_UNABORTWARNING
