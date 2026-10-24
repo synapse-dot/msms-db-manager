@@ -1,6 +1,6 @@
-#include <catch2/catch_session.hpp>
-
 #include <wx/log.h>
+
+#include <catch2/catch_session.hpp>
 
 int main(int argc, char* argv[]) {
     // wxLogError can route to a modal GUI target on Windows. Tests must always
