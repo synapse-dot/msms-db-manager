@@ -1,9 +1,14 @@
 cmake_minimum_required(VERSION 3.27)
 
+set(MSMS_VERSION "1.0.0" CACHE STRING "MSMS Manager semantic version; release builds set this from the Git tag")
+if(NOT MSMS_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "MSMS_VERSION must be a semantic version in MAJOR.MINOR.PATCH form (got '${MSMS_VERSION}').")
+endif()
+
 project(msms-manager
-    VERSION 1.0.0
+    VERSION ${MSMS_VERSION}
     DESCRIPTION "Offline desktop application for managing MSMS membership and society records"
-    HOMEPAGE_URL "https://github.com/msms/msms-manager"
+    HOMEPAGE_URL "https://github.com/msms/msms-db-manager"
     LANGUAGES C CXX
 )
 

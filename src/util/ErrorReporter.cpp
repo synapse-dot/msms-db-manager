@@ -1,7 +1,5 @@
 #include "ErrorReporter.h"
 
-#include <wx/log.h>
-
 #include "db/DbService.h"
 
 namespace msms {
@@ -55,11 +53,8 @@ ErrorInfo ErrorReporter::Report(sqlite3* db, const wxString& context) {
 
     info.plainExplanation = ExplainConstraint(info.extendedErrorCode, info.rawMessage, context);
 
-    if (info.errorCode != SQLITE_OK) {
-        wxLogError("Database error (%d / %d): %s. Context: %s. Explanation: %s", info.errorCode,
-                   info.extendedErrorCode, info.rawMessage, context.IsEmpty() ? "None" : context,
-                   info.plainExplanation);
-    }
+    // Keep this utility side-effect-free: presentation and logging belong to callers.
+    // In particular, wxLogError may open a modal dialog on Windows and block headless tests.
 
     return info;
 }

@@ -7,6 +7,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  # Use the same key for push and same-repository pull_request runs on a branch.
+  # Fork PRs use the fork's repository name, avoiding collisions with upstream branches.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -29,6 +35,10 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Validate Linux packaging script syntax
+        if: matrix.platform == 'linux'
+        run: bash -n packaging/linux/appimage.sh
 
       - name: Set up MSVC
         if: matrix.platform == 'windows'
@@ -68,7 +78,25 @@ jobs:
 
       - name: Test (Windows)
         if: matrix.platform == 'windows'
-        run: ctest --preset ci-windows
+        env:
+          WX_UNIT_TEST_NO_DIALOGS: "1"
+        run: ctest --preset ci-windows --output-on-failure --timeout 60 --verbose
+
+      - name: Fail if any test timed out
+        if: matrix.platform == 'windows' && always()
+        shell: pwsh
+        run: |
+          $logPath = "build/ci-windows/Testing/Temporary/LastTest.log"
+          if (-not (Test-Path $logPath)) {
+            Write-Output "CTest log not found; the test step may not have started."
+            exit 0
+          }
+          $log = Get-Content -Raw -Path $logPath
+          if ($log -match '(?im)^\*{3}\s*Timeout(?:\s|$)') {
+            Write-Error "At least one test timed out; see $logPath"
+            exit 1
+          }
+          Write-Output "No CTest timeout marker found."
 
       - name: Stage artifact (Windows)
         if: matrix.platform == 'windows'
@@ -135,7 +163,7 @@ jobs:
               ccache --show-stats
               cmake --preset ci-linux
               cmake --build --preset ci-linux --parallel 2
-              ctest --preset ci-linux
+              ctest --preset ci-linux --output-on-failure --timeout 120
 
               mkdir -p AppDir/usr/bin out
               cp build/ci-linux/msms AppDir/usr/bin/msms-manager
@@ -182,8 +210,24 @@ jobs:
           sudo apt-get update
           # Assumes ubuntu-latest provides wxWidgets 3.2 development headers.
           sudo apt-get install --yes clang-format-19 clang-tidy cmake ninja-build ccache \
-            libwxgtk3.2-dev libsqlite3-dev
+            python3-yaml libwxgtk3.2-dev libsqlite3-dev
           clang-format-19 --version
+
+      - name: Validate workflow YAML
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          files = sorted(Path(".github/workflows").glob("*.yml"))
+          if not files:
+              raise SystemExit("No GitHub Actions workflow files found.")
+          for path in files:
+              with path.open(encoding="utf-8") as stream:
+                  yaml.safe_load(stream)
+              print(f"YAML syntax OK: {path}")
+          PY
 
       - name: Check formatting
         shell: bash

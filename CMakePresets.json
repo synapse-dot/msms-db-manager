@@ -71,6 +71,18 @@
       }
     },
     {
+      "name": "release-windows-static",
+      "displayName": "Windows Static Release",
+      "description": "Release configuration with static wxWidgets, static dependencies, and static MSVC runtime.",
+      "inherits": "ci-windows",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+        "CMAKE_CXX_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_C_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG"
+      }
+    },
+    {
       "name": "host-linux",
       "displayName": "Host Linux (advisory analysis)",
       "description": "Native host configuration for advisory clang-tidy checks; separate from the glibc 2.31 container build.",
@@ -97,6 +109,11 @@
       "name": "ci-windows",
       "displayName": "Build CI Windows",
       "configurePreset": "ci-windows"
+    },
+    {
+      "name": "release-windows-static",
+      "displayName": "Build Windows Static Release",
+      "configurePreset": "release-windows-static"
     }
   ],
   "testPresets": [
@@ -137,6 +154,18 @@
       "name": "ci-windows",
       "displayName": "Test CI Windows",
       "configurePreset": "ci-windows",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "release-windows-static",
+      "displayName": "Test Windows Static Release",
+      "configurePreset": "release-windows-static",
+      "configuration": "Release",
       "output": {
         "outputOnFailure": true
       },

@@ -33,7 +33,10 @@ struct ErrorInfo {
 };
 
 /**
- * @brief Intercepts and explains SQLite errors with human-friendly context.
+ * @brief Captures and explains SQLite errors with human-friendly context.
+ *
+ * This utility does not log errors or display UI. Callers decide how to present
+ * the returned ErrorInfo, so this code remains safe for tests and headless use.
  */
 class ErrorReporter {
 public:
