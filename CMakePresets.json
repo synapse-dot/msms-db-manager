@@ -64,7 +64,7 @@
         "CMAKE_CXX_FLAGS_RELEASE": "",
         "CMAKE_C_FLAGS_RELEASE": ""
       },
-      "generator": "Visual Studio 17 2022",
+      "generator": "Visual Studio 18 2026",
       "architecture": {
         "value": "x64",
         "strategy": "set"
