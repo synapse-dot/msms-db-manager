@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    name: 'Build and test (${{ matrix.name }})'
+    name: Build and test (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
@@ -32,44 +32,117 @@ jobs:
         if: matrix.platform == 'windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Cache vcpkg packages
+        if: matrix.platform == 'windows'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\\vcpkg\\archives
+          key: vcpkg-windows-x64-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}
+          restore-keys: |
+            vcpkg-windows-x64-
+
       - name: Install wxWidgets with vcpkg
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          git clone https://github.com/microsoft/vcpkg.git "$env:RUNNER_TEMP\vcpkg"
-          & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
-          & "$env:RUNNER_TEMP\vcpkg\vcpkg.exe" install wxwidgets:x64-windows
-          "VCPKG_ROOT=$env:RUNNER_TEMP\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          git clone https://github.com/microsoft/vcpkg.git "$env:RUNNER_TEMP\\vcpkg"
+          & "$env:RUNNER_TEMP\\vcpkg\\bootstrap-vcpkg.bat" -disableMetrics
+          "VCPKG_ROOT=$env:RUNNER_TEMP\\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VCPKG_DEFAULT_BINARY_CACHE=$env:RUNNER_TEMP\\vcpkg\\archives" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & "$env:RUNNER_TEMP\\vcpkg\\vcpkg.exe" install wxwidgets:x64-windows
 
       - name: Configure (Windows)
         if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          cmake -S . -B build -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -DBUILD_TESTING=ON
+        run: cmake --preset ci-windows -A x64
 
       - name: Build (Windows)
         if: matrix.platform == 'windows'
-        run: cmake --build build --config Release --parallel
+        run: cmake --build --preset ci-windows --parallel
 
       - name: Test (Windows)
         if: matrix.platform == 'windows'
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: ctest --preset ci-windows
+
+      - name: Cache ccache objects
+        if: matrix.platform == 'linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-linux-glibc231-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-linux-glibc231-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}-
+
+      - name: Cache wxWidgets source
+        if: matrix.platform == 'linux'
+        uses: actions/cache@v4
+        with:
+          path: build/ci-linux/_deps/wxwidgets-src
+          key: wxwidgets-3.2.5-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}
+          restore-keys: |
+            wxwidgets-3.2.5-linux-
 
       - name: Configure, build and test (Linux; Ubuntu 20.04 container)
         if: matrix.platform == 'linux'
         shell: bash
         run: |
-          docker run --rm \
-            -v "$GITHUB_WORKSPACE:/src" \
-            -w /src \
+          mkdir -p "$HOME/.cache/ccache"
+          docker run --rm \\
+            -v "$GITHUB_WORKSPACE:/src" \\
+            -v "$HOME/.cache/ccache:/root/.cache/ccache" \\
+            -w /src \\
             ubuntu:20.04 bash -euxo pipefail -c '
               apt-get update
-              DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
-                build-essential git pkg-config ninja-build python3-pip \
-                libgtk-3-dev libglib2.0-dev libjpeg-dev libpng-dev \
+              DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \\
+                build-essential git pkg-config ninja-build python3-pip ccache curl file \\
+                libgtk-3-dev libglib2.0-dev libjpeg-dev libpng-dev \\
                 libtiff-dev libexpat1-dev libcurl4-openssl-dev
               python3 -m pip install --no-cache-dir cmake==3.27.9
-              cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
-              cmake --build build --parallel
-              ctest --test-dir build --output-on-failure
+
+              curl -fsSL -o /usr/local/bin/linuxdeploy \\
+                https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+              curl -fsSL -o /usr/local/bin/linuxdeploy-plugin-gtk \\
+                https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk.sh
+              chmod +x /usr/local/bin/linuxdeploy /usr/local/bin/linuxdeploy-plugin-gtk
+
+              export PATH="/usr/local/bin:$PATH"
+              export CCACHE_DIR=/root/.cache/ccache
+              export CCACHE_BASEDIR=/src
+              ccache --show-stats
+              cmake --preset ci-linux
+              cmake --build --preset ci-linux --parallel
+              ctest --preset ci-linux
+              ccache --show-stats
             '
+
+  advisory-quality:
+    name: Advisory formatting and static analysis
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install quality tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang-format clang-tidy cmake ninja-build ccache \\
+            libwxgtk3.2-dev libsqlite3-dev
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          mapfile -t files < <(git ls-files '*.cpp' '*.h')
+          if (("${#files[@]}" > 0)); then
+            clang-format --dry-run --Werror "${files[@]}"
+          fi
+
+      - name: Configure for clang-tidy
+        run: cmake --preset ci-linux
+
+      - name: Run clang-tidy (advisory)
+        shell: bash
+        run: |
+          mapfile -t files < <(git ls-files '*.cpp')
+          if (("${#files[@]}" > 0)); then
+            clang-tidy -p build/ci-linux "${files[@]}"
+          fi
