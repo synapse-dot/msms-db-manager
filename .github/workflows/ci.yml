@@ -78,7 +78,25 @@ jobs:
 
       - name: Test (Windows)
         if: matrix.platform == 'windows'
-        run: ctest --preset ci-windows --output-on-failure --timeout 120
+        env:
+          WX_UNIT_TEST_NO_DIALOGS: "1"
+        run: ctest --preset ci-windows --output-on-failure --timeout 60 --verbose
+
+      - name: Fail if any test timed out
+        if: matrix.platform == 'windows' && always()
+        shell: pwsh
+        run: |
+          $logPath = "build/ci-windows/Testing/Temporary/LastTest.log"
+          if (-not (Test-Path $logPath)) {
+            Write-Output "CTest log not found; the test step may not have started."
+            exit 0
+          }
+          $log = Get-Content -Raw -Path $logPath
+          if ($log -match '(?im)^\*{3}\s*Timeout(?:\s|$)') {
+            Write-Error "At least one test timed out; see $logPath"
+            exit 1
+          }
+          Write-Output "No CTest timeout marker found."
 
       - name: Stage artifact (Windows)
         if: matrix.platform == 'windows'
