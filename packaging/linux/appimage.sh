@@ -28,7 +28,7 @@ GLIBC_VERSION="$(getconf GNU_LIBC_VERSION | awk '{print $2}')"
 [[ "${GLIBC_VERSION}" == "2.31" ]] ||
     die "build on glibc 2.31 to preserve Debian 11 / Ubuntu 20.04 compatibility (detected ${GLIBC_VERSION}). Use the Ubuntu 20.04 release container."
 
-for command_name in cmake ninja pkg-config curl file rsvg-convert; do
+for command_name in cmake pkg-config curl file rsvg-convert; do
     command -v "${command_name}" >/dev/null 2>&1 ||
         die "required command '${command_name}' is missing; install the packaging build dependencies."
 done
@@ -49,7 +49,7 @@ cmake --preset ci-linux \
     -DwxBUILD_INSTALL=OFF
 
 cmake --build --preset ci-linux --parallel "${JOBS}"
-ctest --preset ci-linux --output-on-failure
+ctest --preset ci-linux --output-on-failure --timeout 120
 
 [[ -x "${APP_BINARY}" ]] || die "expected release executable was not produced at ${APP_BINARY}."
 if ldd "${APP_BINARY}" 2>/dev/null | grep -E 'libwx[^[:space:]]*\.so|libsqlite3\.so'; then
