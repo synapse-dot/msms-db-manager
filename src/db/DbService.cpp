@@ -36,8 +36,8 @@ bool SameFileIdentity(const wxString& first, const wxString& second) {
         return true;
     }
 #ifdef _WIN32
-    const wxScopedWCharBuffer firstWide = first.wc_str();
-    const wxScopedWCharBuffer secondWide = second.wc_str();
+    const wchar_t* firstWide = first.wc_str();
+    const wchar_t* secondWide = second.wc_str();
     HANDLE firstHandle = CreateFileW(firstWide.data(), FILE_READ_ATTRIBUTES,
                                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                      nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -216,8 +216,8 @@ void RemoveEphemeralPathLock(const wxString& dbPath) {
 bool AtomicReplaceFile(const wxString& stagedPath, const wxString& workingPath,
                        wxString* outError) {
 #ifdef _WIN32
-    const wxScopedWCharBuffer stagedWide = stagedPath.wc_str();
-    const wxScopedWCharBuffer workingWide = workingPath.wc_str();
+    const wchar_t* stagedWide = stagedPath.wc_str();
+    const wchar_t* workingWide = workingPath.wc_str();
     if (MoveFileExW(stagedWide.data(), workingWide.data(),
                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         return true;
@@ -446,7 +446,7 @@ bool DbService::AcquirePathLock(const wxString& dbPath, bool exclusive, wxString
     ReleasePathLock();
 
 #ifdef _WIN32
-    const wxScopedWCharBuffer wideLockPath = lockPath.wc_str();
+    const wchar_t* wideLockPath = lockPath.wc_str();
     HANDLE handle = CreateFileW(wideLockPath.data(), GENERIC_READ | GENERIC_WRITE,
                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                                 OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
