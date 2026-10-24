@@ -44,7 +44,7 @@ struct FileIdentity {
 inline FileIdentity CaptureFileIdentity(const wxString& path) {
     FileIdentity identity;
 #ifdef _WIN32
-    const wxScopedWCharBuffer widePath = path.wc_str();
+    const wchar_t* widePath = path.wc_str();
     HANDLE handle = ::CreateFileW(
         widePath.data(), FILE_READ_ATTRIBUTES,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
