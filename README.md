@@ -41,18 +41,22 @@ The project uses standard CMake presets for configuration and compilation.
 ### Prerequisites
 
 #### Linux (Debian / Ubuntu)
+
 ```bash
 sudo apt-get update
 sudo apt-get install build-essential cmake libwxgtk3.2-dev
 ```
 
 #### Linux (Arch Linux)
+
 ```bash
 sudo pacman -S base-devel cmake wxwidgets-gtk3
 ```
 
 #### Windows
+
 Dependencies can be installed via [vcpkg](https://github.com/microsoft/vcpkg):
+
 ```cmd
 vcpkg install wxwidgets:x64-windows catch2:x64-windows
 ```
@@ -60,12 +64,14 @@ vcpkg install wxwidgets:x64-windows catch2:x64-windows
 ### Build Commands
 
 #### Release Build
+
 ```bash
 cmake --preset release
 cmake --build --preset release
 ```
 
 Launch the application:
+
 ```bash
 # Linux
 ./build/release/msms-manager
@@ -75,6 +81,7 @@ Launch the application:
 ```
 
 #### Debug Build & Running Tests
+
 ```bash
 cmake --preset debug
 cmake --build --preset debug
@@ -90,6 +97,7 @@ The Windows installer and executable binaries for MSMS Manager are currently uns
 > **"Windows protected your PC — Microsoft Defender SmartScreen prevented an unrecognized app from starting."**
 
 To proceed:
+
 1. Click **More info**.
 2. Click **Run anyway**.
 
@@ -102,20 +110,27 @@ Users can independently verify that the downloaded binary has not been tampered 
 Every official release includes a `SHA256SUMS` file alongside installer and AppImage packages.
 
 ### Linux
-Run the following in the terminal containing the downloaded release files:
+
+Run in the terminal containing the downloaded release files:
+
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
 ```
+
 You should see `OK` next to the verified files.
 
 ### Windows (PowerShell)
+
 To calculate the SHA-256 hash of the downloaded installer:
+
 ```powershell
 Get-FileHash -Algorithm SHA256 .\MSMSManager-<version>-win64.exe
 ```
+
 Compare the output string with the value published in `SHA256SUMS`.
 
 ### Windows (Command Prompt)
+
 ```cmd
 certutil -hashfile MSMSManager-<version>-win64.exe SHA256
 ```
