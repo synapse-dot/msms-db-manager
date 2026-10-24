@@ -52,6 +52,10 @@ cmake --build --preset ci-linux --parallel "${JOBS}"
 ctest --preset ci-linux --output-on-failure --timeout 120
 
 [[ -x "${APP_BINARY}" ]] || die "expected release executable was not produced at ${APP_BINARY}."
+BINARY_SIZE="$(stat -c '%s' "${APP_BINARY}")"
+((BINARY_SIZE < 15000000)) ||
+    die "release executable is ${BINARY_SIZE} bytes; the target is below 15,000,000 bytes."
+printf 'Release executable size: %s bytes\n' "${BINARY_SIZE}"
 if ldd "${APP_BINARY}" 2>/dev/null | grep -E 'libwx[^[:space:]]*\.so|libsqlite3\.so'; then
     die "the executable links to shared wxWidgets or SQLite; check the static dependency build."
 fi
