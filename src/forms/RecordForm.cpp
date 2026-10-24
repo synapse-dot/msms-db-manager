@@ -338,9 +338,11 @@ void RecordForm::OnDelete(wxCommandEvent& /*event*/) {
         return;
     }
 
-    const wxString prompt = "Delete this record? This action cannot be undone.";
-    if (wxMessageBox(prompt, "Confirm Delete",
-                     wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES) {
+    const wxString prompt =
+        "Delete this record? This action cannot be undone. Records that depend on it may prevent deletion.";
+    wxMessageDialog confirmation(this, prompt, "Confirm Delete",
+                                wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
+    if (confirmation.ShowModal() != wxID_YES) {
         return;
     }
 
