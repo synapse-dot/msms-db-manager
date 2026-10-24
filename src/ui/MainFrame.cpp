@@ -394,7 +394,7 @@ bool MainFrame::ConfirmLeaveActiveForm() {
         if (form->IsDirty()) {
             ShowDatabaseError(
                 this, "Save Error",
-                "The form still reports unsaved changes after saving. Navigation was cancelled.");
+                "The form still reports unsaved changes after saving. The action was cancelled.");
             return false;
         }
         return true;
@@ -405,7 +405,7 @@ bool MainFrame::ConfirmLeaveActiveForm() {
         if (form->IsDirty()) {
             ShowDatabaseError(
                 this, "Discard Error",
-                "The form still reports unsaved changes after discard. Navigation was cancelled.");
+                "The form still reports unsaved changes after discard. The action was cancelled.");
             return false;
         }
         return true;
@@ -942,6 +942,9 @@ void MainFrame::OnOpenDatabase(wxCommandEvent& /*event*/) {
     if (!ReopenDatabase(path, &error)) {
         ShowDatabaseError(this, "Database Open Error",
                           wxString("Could not switch to the selected database:\n\n") + error);
+    } else {
+        // Do not leave a form bound to records from the previous database open.
+        ReturnToTablePage("All Members");
     }
 }
 
@@ -1028,6 +1031,9 @@ void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
         ShowDatabaseError(this, "Database Creation Error",
                           wxString("The new database was created, but could not be opened:\n\n") +
                               error);
+    } else {
+        // The current form belongs to the previous database, if one was open.
+        ReturnToTablePage("All Members");
     }
 }
 
