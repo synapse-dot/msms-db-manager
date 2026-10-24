@@ -3,6 +3,7 @@
 
 #include <optional>
 
+#include <wx/event.h>
 #include <wx/frame.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
@@ -49,6 +50,7 @@ private:
     void OnSaveBackup(wxCommandEvent& event);
     void OnRestoreBackup(wxCommandEvent& event);
     void OnExit(wxCommandEvent& event);
+    void OnClose(wxCloseEvent& event);
     void OnAbout(wxCommandEvent& event);
 
     void RememberDatabasePath(const wxString& path);
