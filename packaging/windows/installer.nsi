@@ -91,6 +91,9 @@ Section "MSMS Manager" SEC_MAIN
   CreateShortcut "$SMPROGRAMS\MSMS Manager\MSMS Manager.lnk" "$INSTDIR\msms-manager.exe"
   CreateShortcut "$DESKTOP\MSMS Manager.lnk" "$INSTDIR\msms-manager.exe"
 
+  ; Do not remove the legacy registration unless the new 64-bit entry can be
+  ; written and read back. Clear prior errors so this check covers these writes.
+  ClearErrors
   WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "DisplayName" "${PRODUCT_NAME}"
   WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "DisplayVersion" "${APP_VERSION}"
   WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "Publisher" "MSMS"
@@ -98,11 +101,42 @@ Section "MSMS Manager" SEC_MAIN
   WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "UninstallString" "$\"$INSTDIR\Uninstall.exe$\""
   WriteRegDWORD HKLM "${UNINSTALL_REG_KEY}" "NoModify" 1
   WriteRegDWORD HKLM "${UNINSTALL_REG_KEY}" "NoRepair" 1
+  IfErrors preserve_legacy_uninstall_entry
 
-  ; Remove the legacy 32-bit-view entry left by earlier installer versions.
+  SetRegView 64
+  ClearErrors
+  ReadRegStr $0 HKLM "${UNINSTALL_REG_KEY}" "DisplayName"
+  IfErrors preserve_legacy_uninstall_entry
+  StrCmp $0 "${PRODUCT_NAME}" 0 preserve_legacy_uninstall_entry
+
+  ClearErrors
+  ReadRegStr $0 HKLM "${UNINSTALL_REG_KEY}" "DisplayVersion"
+  IfErrors preserve_legacy_uninstall_entry
+  StrCmp $0 "${APP_VERSION}" 0 preserve_legacy_uninstall_entry
+
+  ClearErrors
+  ReadRegStr $0 HKLM "${UNINSTALL_REG_KEY}" "InstallLocation"
+  IfErrors preserve_legacy_uninstall_entry
+  StrCmp $0 "$INSTDIR" 0 preserve_legacy_uninstall_entry
+
+  ClearErrors
+  ReadRegStr $0 HKLM "${UNINSTALL_REG_KEY}" "UninstallString"
+  IfErrors preserve_legacy_uninstall_entry
+  StrCmp $0 "" preserve_legacy_uninstall_entry
+
+  ; The 64-bit registration is present and has the expected values.
+  ; Only now is it safe to remove the legacy 32-bit-view entry.
   SetRegView 32
   DeleteRegKey HKLM "${UNINSTALL_REG_KEY}"
   SetRegView 64
+  Goto uninstall_registration_check_done
+
+preserve_legacy_uninstall_entry:
+  ; Keep the old Add/Remove Programs entry if the new entry cannot be verified.
+  SetRegView 64
+  MessageBox MB_OK|MB_ICONEXCLAMATION "The new Windows uninstall registration could not be verified. The previous uninstall entry has been retained."
+
+uninstall_registration_check_done:
 SectionEnd
 
 Section "Uninstall"
