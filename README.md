@@ -107,7 +107,7 @@ Users can independently verify that the downloaded binary has not been tampered 
 
 ## Verifying Release Integrity (SHA-256)
 
-Every official release includes a `SHA256SUMS` file alongside installer and AppImage packages.
+Every official release includes a `SHA256SUMS` file alongside installer and AppImage packages. For the required manual compatibility checks on supported Linux distributions and Windows versions, use [the release verification checklist](packaging/RELEASE_CHECKLIST.md).
 
 ### Linux
 
