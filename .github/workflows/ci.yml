@@ -104,8 +104,6 @@ jobs:
         run: |
           mkdir -p "$HOME/.cache/ccache"
           docker run --rm \
-            -e HOST_UID="$(id -u)" \
-            -e HOST_GID="$(id -g)" \
             -v "$GITHUB_WORKSPACE:/src" \
             -v "$HOME/.cache/ccache:/tmp/.cache/ccache" \
             -w /src \
@@ -123,22 +121,19 @@ jobs:
                 https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk.sh
               chmod +x /usr/local/bin/linuxdeploy /usr/local/bin/linuxdeploy-plugin-gtk
 
-              groupadd --gid "$HOST_GID" ciuser || true
-              useradd --uid "$HOST_UID" --gid "$HOST_GID" --no-create-home --home-dir /tmp --shell /usr/sbin/nologin ciuser || true
-              mkdir -p /tmp/.cache/ccache
-              chown -R "$HOST_UID:$HOST_GID" /tmp/.cache/ccache
+              export PATH="/usr/local/bin:$PATH"
+              export CCACHE_DIR=/tmp/.cache/ccache
+              export CCACHE_BASEDIR=/src
+              export APPIMAGE_EXTRACT_AND_RUN=1
+              export DEPLOY_GTK_VERSION=3
+              ccache --show-stats
+              cmake --preset ci-linux
+              cmake --build --preset ci-linux --parallel
+              ctest --preset ci-linux
 
-              runuser -u ciuser -- env HOME=/tmp PATH="/usr/local/bin:$PATH" \
-                CCACHE_DIR=/tmp/.cache/ccache CCACHE_BASEDIR=/src \
-                APPIMAGE_EXTRACT_AND_RUN=1 DEPLOY_GTK_VERSION=3 \
-                bash -euxo pipefail -c "
-                  ccache --show-stats
-                  cmake --preset ci-linux
-                  cmake --build --preset ci-linux --parallel
-                  ctest --preset ci-linux
-                  mkdir -p AppDir/usr/bin out
-                  cp build/ci-linux/msms AppDir/usr/bin/msms-manager
-                  cat > AppDir/msms-manager.desktop <<EOF
+              mkdir -p AppDir/usr/bin out
+              cp build/ci-linux/msms AppDir/usr/bin/msms-manager
+              cat > AppDir/msms-manager.desktop <<EOF
 [Desktop Entry]
 Type=Application
 Name=MSMS Manager
@@ -146,19 +141,19 @@ Exec=msms-manager
 Icon=msms-manager
 Categories=Office;Database;
 EOF
-                  cat > AppDir/msms-manager.svg <<EOF
-<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"256\" height=\"256\" viewBox=\"0 0 256 256\">
-  <rect x=\"16\" y=\"16\" width=\"224\" height=\"224\" rx=\"36\" fill=\"#0B0F14\"/>
-  <path d=\"M54 180V76h24l50 61 50-61h24v104h-27v-62l-47 56-47-56v62z\" fill=\"#4ADE80\"/>
+              cat > AppDir/msms-manager.svg <<EOF
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect x="16" y="16" width="224" height="224" rx="36" fill="#0B0F14"/>
+  <path d="M54 180V76h24l50 61 50-61h24v104h-27v-62l-47 56-47-56v62z" fill="#4ADE80"/>
 </svg>
 EOF
-                  linuxdeploy --appdir AppDir --plugin gtk --desktop-file AppDir/msms-manager.desktop --icon-file AppDir/msms-manager.svg --output appimage
-                  appimage=$(find . -maxdepth 1 -type f -name \"*.AppImage\" -print -quit)
-                  test -n \"$appimage\"
-                  cp \"$appimage\" out/MSMS_Manager-linux-x64.AppImage
-                  cp build/ci-linux/msms out/msms-manager-linux-x64
-                  ccache --show-stats
-                "
+              linuxdeploy --appdir AppDir --plugin gtk --desktop-file AppDir/msms-manager.desktop --icon-file AppDir/msms-manager.svg --output appimage
+              appimage=$(find . -maxdepth 1 -type f -name "*.AppImage" -print -quit)
+              test -n "$appimage"
+              cp "$appimage" out/MSMS_Manager-linux-x64.AppImage
+              cp build/ci-linux/msms out/msms-manager-linux-x64
+              ccache --show-stats
+              chmod -R a+rwX /tmp/.cache/ccache
             '
 
       - name: Upload artifact (Linux binary)
