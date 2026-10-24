@@ -27,6 +27,7 @@
 #include "forms/RelationshipForm.h"
 #include "ui/ScopedPage.h"
 #include "ui/TablePage.h"
+#include "util/FileIdentity.h"
 
 namespace msms {
 namespace {
@@ -149,6 +150,44 @@ void ShowDatabaseError(wxWindow* parent, const wxString& title, const wxString& 
     wxMessageBox(message, title, wxOK | wxICON_ERROR, parent);
 }
 
+bool ConfirmDestinationIdentityIsStable(wxWindow* parent, const wxString& path,
+                                        msms::FileIdentity& approvedIdentity) {
+    if (!approvedIdentity.valid) {
+        ShowDatabaseError(parent, "Database Creation Error",
+                          "The destination file identity could not be determined safely. "
+                          "No replacement was performed.");
+        return false;
+    }
+
+    while (true) {
+        const msms::FileIdentity currentIdentity = msms::CaptureFileIdentity(path);
+        if (!currentIdentity.valid) {
+            ShowDatabaseError(parent, "Database Creation Error",
+                              "The destination file identity can no longer be determined. "
+                              "No replacement was performed.");
+            return false;
+        }
+        if (currentIdentity == approvedIdentity) {
+            return true;
+        }
+
+        // The user previously consented to a different destination state. Capture
+        // the new identity before prompting, then loop and check again after the
+        // dialog closes so a change while the prompt is open causes another prompt.
+        wxMessageDialog changedDialog(
+            parent,
+            wxString("The destination file '") + path +
+                "' changed while the new database was being created. Another process may have "
+                "created, replaced, or removed it.\n\nDo you still want to replace the destination "
+                "in its current state?",
+            "Destination Changed", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
+        if (changedDialog.ShowModal() != wxID_YES) {
+            return false;
+        }
+        approvedIdentity = currentIdentity;
+    }
+}
+
 std::optional<std::int64_t> ParseRecordId(const wxString& text) {
     try {
         const std::string encoded = text.ToStdString();
@@ -196,6 +235,7 @@ MainFrame::MainFrame(DbService& dbService)
     SetSizer(frameSizer);
 
     BuildMenuBar();
+    Bind(wxEVT_CLOSE_WINDOW, &MainFrame::OnClose, this);
     m_navigationTree->Bind(wxEVT_TREE_SEL_CHANGING,
                            &MainFrame::OnNavigationSelectionChanging, this);
 
@@ -360,7 +400,7 @@ bool MainFrame::ConfirmLeaveActiveForm() {
     auto* layout = new wxBoxSizer(wxVERTICAL);
     auto* message = new wxStaticText(
         &dialog, wxID_ANY,
-        "This form has unsaved changes. Save them before leaving, discard them, or cancel navigation.");
+        "This form has unsaved changes. Save before continuing, discard the changes, or cancel this action.");
     message->Wrap(420);
     layout->Add(message, 0, wxALL, 14);
 
@@ -393,7 +433,7 @@ bool MainFrame::ConfirmLeaveActiveForm() {
         if (form->IsDirty()) {
             ShowDatabaseError(
                 this, "Save Error",
-                "The form still reports unsaved changes after saving. Navigation was cancelled.");
+                "The form still reports unsaved changes after saving. The action was cancelled.");
             return false;
         }
         return true;
@@ -404,7 +444,7 @@ bool MainFrame::ConfirmLeaveActiveForm() {
         if (form->IsDirty()) {
             ShowDatabaseError(
                 this, "Discard Error",
-                "The form still reports unsaved changes after discard. Navigation was cancelled.");
+                "The form still reports unsaved changes after discard. The action was cancelled.");
             return false;
         }
         return true;
@@ -912,6 +952,10 @@ bool MainFrame::SetWorkspaceView(wxWindow* view) {
 }
 
 void MainFrame::OnOpenDatabase(wxCommandEvent& /*event*/) {
+    if (!ConfirmLeaveActiveForm()) {
+        return;
+    }
+
     wxFileDialog dialog(
         this, "Open Database", wxEmptyString, wxEmptyString,
         "SQLite Database (*.db;*.sqlite;*.sqlite3)|*.db;*.sqlite;*.sqlite3|All Files (*.*)|*.*",
@@ -937,10 +981,17 @@ void MainFrame::OnOpenDatabase(wxCommandEvent& /*event*/) {
     if (!ReopenDatabase(path, &error)) {
         ShowDatabaseError(this, "Database Open Error",
                           wxString("Could not switch to the selected database:\n\n") + error);
+    } else {
+        // Do not leave a form bound to records from the previous database open.
+        ReturnToTablePage("All Members");
     }
 }
 
 void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
+    if (!ConfirmLeaveActiveForm()) {
+        return;
+    }
+
     wxFileDialog dialog(this, "Create New Database", wxEmptyString, "members.db",
                         "SQLite Database (*.db)|*.db|All Files (*.*)|*.*", wxFD_SAVE);
     if (dialog.ShowModal() != wxID_OK) {
@@ -954,13 +1005,23 @@ void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
         return;
     }
 
-    if (wxFileExists(path)) {
-        const int answer = wxMessageBox(
+    // Capture what the user is being asked to replace. Unknown identity is not
+    // treated as absence, because that would bypass the overwrite confirmation.
+    msms::FileIdentity approvedIdentity = msms::CaptureFileIdentity(path);
+    if (!approvedIdentity.valid) {
+        ShowDatabaseError(this, "Database Creation Error",
+                          "The destination file identity could not be determined safely.");
+        return;
+    }
+
+    if (approvedIdentity.exists) {
+        wxMessageDialog confirmation(
+            this,
             wxString("The file '") + path +
                 "' already exists. Creating a new database will replace this file and all records "
                 "it contains. This action cannot be undone.\n\nDo you want to continue?",
-            "Confirm Database Replacement", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this);
-        if (answer != wxYES) {
+            "Confirm Database Replacement", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
+        if (confirmation.ShowModal() != wxID_YES) {
             return;
         }
     }
@@ -1000,13 +1061,33 @@ void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
         m_dbService.Close();
     }
 
+    // Recheck after the temporary database is ready and the active connection (if
+    // this path is open here) has closed. This narrows the check/rename race; it is
+    // not an atomic compare-and-swap against arbitrary external filesystem writers.
+    if (!ConfirmDestinationIdentityIsStable(this, path, approvedIdentity)) {
+        wxRemoveFile(tempPath);
+        if (replacingOpenDatabase) {
+            wxString reopenError;
+            if (!ReopenDatabase(previousPath, &reopenError)) {
+                ShowDatabaseError(this, "Database Reopen Error",
+                                  wxString("The create operation was cancelled, but the previous "
+                                           "database could not be reopened:\n\n") + reopenError);
+            }
+        }
+        return;
+    }
+
     if (!wxRenameFile(tempPath, path, true)) {
         if (wxFileExists(tempPath)) {
             wxRemoveFile(tempPath);
         }
         if (replacingOpenDatabase) {
             wxString reopenError;
-            ReopenDatabase(previousPath, &reopenError);
+            if (!ReopenDatabase(previousPath, &reopenError)) {
+                ShowDatabaseError(this, "Database Reopen Error",
+                                  wxString("The previous database could not be reopened:\n\n") +
+                                      reopenError);
+            }
         }
         ShowDatabaseError(this, "Database Creation Error",
                           "The initialised database could not be moved to the selected location. "
@@ -1018,10 +1099,17 @@ void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
         ShowDatabaseError(this, "Database Creation Error",
                           wxString("The new database was created, but could not be opened:\n\n") +
                               error);
+    } else {
+        // The current form belongs to the previous database, if one was open.
+        ReturnToTablePage("All Members");
     }
 }
 
 void MainFrame::OnSaveBackup(wxCommandEvent& /*event*/) {
+    if (!ConfirmLeaveActiveForm()) {
+        return;
+    }
+
     if (!m_dbService.IsOpen()) {
         ShowDatabaseError(this, "Backup Error", "There is no open database to back up.");
         return;
@@ -1095,14 +1183,15 @@ void MainFrame::OnRestoreBackup(wxCommandEvent& /*event*/) {
     }
 
     const wxString activePath = m_dbService.GetDbPath();
-    const int answer = wxMessageBox(
+    wxMessageDialog confirmation(
+        this,
         wxString("Restoring a backup will replace all records in '") +
             wxFileName(activePath).GetFullName() +
             "'. A timestamped safety copy of the current database will be saved beside it first. "
             "Only a backup that passes integrity and schema validation will be installed.\n\n"
             "Continue to choose a backup file?",
-        "Confirm Database Restore", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this);
-    if (answer != wxYES) {
+        "Confirm Database Restore", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
+    if (confirmation.ShowModal() != wxID_YES) {
         return;
     }
 
@@ -1153,7 +1242,17 @@ void MainFrame::OnRestoreBackup(wxCommandEvent& /*event*/) {
 }
 
 void MainFrame::OnExit(wxCommandEvent& /*event*/) {
-    Close(true);
+    // Route menu exit through the close event so it uses the same dirty-form guard
+    // as the window manager's close button.
+    Close(false);
+}
+
+void MainFrame::OnClose(wxCloseEvent& event) {
+    if (event.CanVeto() && !ConfirmLeaveActiveForm()) {
+        event.Veto();
+        return;
+    }
+    event.Skip();
 }
 
 void MainFrame::OnAbout(wxCommandEvent& /*event*/) {

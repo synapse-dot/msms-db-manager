@@ -9,8 +9,50 @@
 #include <wx/stattext.h>
 
 #include "db/DbService.h"
+#include "util/FileIdentity.h"
 
 namespace msms {
+namespace {
+
+bool ConfirmDestinationIdentityIsStable(wxWindow* parent, const wxString& path,
+                                        FileIdentity& approvedIdentity) {
+    if (!approvedIdentity.valid) {
+        wxMessageBox("The destination file identity could not be determined safely. "
+                     "No replacement was performed.",
+                     "Database Creation Error", wxOK | wxICON_ERROR, parent);
+        return false;
+    }
+
+    while (true) {
+        const FileIdentity currentIdentity = CaptureFileIdentity(path);
+        if (!currentIdentity.valid) {
+            wxMessageBox("The destination file identity can no longer be determined. "
+                         "No replacement was performed.",
+                         "Database Creation Error", wxOK | wxICON_ERROR, parent);
+            return false;
+        }
+        if (currentIdentity == approvedIdentity) {
+            return true;
+        }
+
+        wxMessageDialog changedDialog(
+            parent,
+            wxString("The destination file '") + path +
+                "' changed while the new database was being created. Another process may have "
+                "created, replaced, or removed it.\n\nDo you still want to replace the destination "
+                "in its current state?",
+            "Destination Changed", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
+        if (changedDialog.ShowModal() != wxID_YES) {
+            return false;
+        }
+
+        // Accept the exact state seen before this prompt, then recheck it. If it
+        // changes while the prompt is open, the loop asks for consent again.
+        approvedIdentity = currentIdentity;
+    }
+}
+
+} // namespace
 
 DatabaseSelectionDialog::DatabaseSelectionDialog(wxWindow* parent, DbService& dbService)
     : wxDialog(parent, wxID_ANY, "Select Database — MSMS Manager", wxDefaultPosition,
@@ -99,23 +141,29 @@ void DatabaseSelectionDialog::OnCreateNew(wxCommandEvent& /*event*/) {
         return;
     }
 
-    if (wxFileExists(path)) {
-        const int answer = wxMessageBox(
-            wxString::Format(
-                "The file '%s' already exists. Creating a new database will replace this file "
-                "and all records it contains. This action cannot be undone.\n\nDo you want to "
-                "continue?",
-                path),
-            "Confirm Database Replacement",
-            wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this);
-        if (answer != wxYES) {
+    FileIdentity approvedIdentity = CaptureFileIdentity(path);
+    if (!approvedIdentity.valid) {
+        wxMessageBox("The destination file identity could not be determined safely.",
+                     "Database Creation Error", wxOK | wxICON_ERROR, this);
+        return;
+    }
+
+    if (approvedIdentity.exists) {
+        wxMessageDialog confirmation(
+            this,
+            wxString("The file '") + path +
+                "' already exists. Creating a new database will replace this file and all records "
+                "it contains. This action cannot be undone.\n\nDo you want to continue?",
+            "Confirm Database Replacement", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
+        if (confirmation.ShowModal() != wxID_YES) {
             return;
         }
     }
 
     // Build the new database beside the destination. If initialization fails, the existing
     // database remains untouched; replace it only after the new schema has been created.
-    const wxFileName destination(path);
+    wxFileName destination(path);
+    destination.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
     const wxString tempPrefix =
         destination.GetPathWithSep() + "." + destination.GetFullName() + ".tmp.";
     const wxString tempPath = wxFileName::CreateTempFileName(tempPrefix);
@@ -126,8 +174,9 @@ void DatabaseSelectionDialog::OnCreateNew(wxCommandEvent& /*event*/) {
     }
 
     wxString error;
-    if (!m_dbService.CreateNew(tempPath, &error)) {
+    if (!m_dbService.CreateNew(tempPath, &error) || !m_dbService.CheckCompatibility(&error)) {
         m_dbService.Close();
+        wxRemoveFile(DatabasePathLockFile(tempPath));
         if (wxFileExists(tempPath)) {
             wxRemoveFile(tempPath);
         }
@@ -137,7 +186,21 @@ void DatabaseSelectionDialog::OnCreateNew(wxCommandEvent& /*event*/) {
     }
 
     m_dbService.Close();
+    wxRemoveFile(DatabasePathLockFile(tempPath));
+
+    // Recheck immediately before moving the new file into place. This closes the
+    // practical race window but is not an atomic compare-and-swap against arbitrary
+    // external filesystem writers.
+    if (!ConfirmDestinationIdentityIsStable(this, path, approvedIdentity)) {
+        wxRemoveFile(DatabasePathLockFile(tempPath));
+        if (wxFileExists(tempPath)) {
+            wxRemoveFile(tempPath);
+        }
+        return;
+    }
+
     if (!wxRenameFile(tempPath, path, true)) {
+        wxRemoveFile(DatabasePathLockFile(tempPath));
         if (wxFileExists(tempPath)) {
             wxRemoveFile(tempPath);
         }
