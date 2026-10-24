@@ -237,7 +237,7 @@ legacy_registration_snapshot_done:
   StrCmp $LegacyRegistrationExists "1" 0 uninstall_registration_check_done
   SetRegView 32
   ClearErrors
-  DeleteRegKey HKLM "${UNINSTALL_REG_KEY}\"
+  DeleteRegKey HKLM "${UNINSTALL_REG_KEY}"
   IfErrors legacy_entry_cleanup_failed
   SetRegView 64
   Goto uninstall_registration_check_done
@@ -287,7 +287,7 @@ restore_previous_64_registration_failed:
 remove_failed_64_registration:
   SetRegView 64
   ClearErrors
-  DeleteRegKey HKLM "${UNINSTALL_REG_KEY}\"
+  DeleteRegKey HKLM "${UNINSTALL_REG_KEY}"
   ClearErrors
   ReadRegStr $0 HKLM "${UNINSTALL_REG_KEY}" "DisplayName"
   IfErrors registration_failure_reported
@@ -296,7 +296,7 @@ remove_failed_64_registration:
 remove_partial_64_registration:
   SetRegView 64
   ClearErrors
-  DeleteRegKey HKLM "${UNINSTALL_REG_KEY}\"
+  DeleteRegKey HKLM "${UNINSTALL_REG_KEY}"
   ClearErrors
   ReadRegStr $0 HKLM "${UNINSTALL_REG_KEY}" "DisplayName"
   IfErrors registration_failure_reported
@@ -331,8 +331,8 @@ Section "Uninstall"
   ; Clean both registry views regardless of which entry launched this uninstaller.
   SetRegView 32
   ClearErrors
-  DeleteRegKey HKLM "${UNINSTALL_REG_KEY}\"
+  DeleteRegKey HKLM "${UNINSTALL_REG_KEY}"
   SetRegView 64
   ClearErrors
-  DeleteRegKey HKLM "${UNINSTALL_REG_KEY}\"
+  DeleteRegKey HKLM "${UNINSTALL_REG_KEY}"
 SectionEnd
