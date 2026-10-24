@@ -134,7 +134,7 @@ jobs:
               export DEPLOY_GTK_VERSION=3
               ccache --show-stats
               cmake --preset ci-linux
-              cmake --build --preset ci-linux --parallel
+              cmake --build --preset ci-linux --parallel 2
               ctest --preset ci-linux
 
               mkdir -p AppDir/usr/bin out
