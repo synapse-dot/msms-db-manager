@@ -23,7 +23,11 @@ jobs:
         shell: pwsh
         run: |
           $tag = $env:GITHUB_REF_NAME
-          if ($tag -notmatch '^v\d+\.\d+\.\d+
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Release tags must use vMAJOR.MINOR.PATCH, e.g. v1.2.3."
+          }
+          $version = $tag.Substring(1)
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install NSIS
         run: choco install nsis --yes --no-progress
@@ -120,155 +124,6 @@ jobs:
               DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
                 build-essential git pkg-config ninja-build python3-pip ccache curl file \
                 librsvg2-bin librsvg2-dev libgtk-3-dev libgirepository1.0-dev libjpeg-dev libpng-dev \
-                libtiff-dev libexpat1-dev libcurl4-openssl-dev
-              python3 -m pip install --no-cache-dir cmake==3.27.9
-              bash packaging/linux/appimage.sh
-              chown -R "$(stat -c "%u:%g" /src)" /src/out
-              chmod -R a+rwX /tmp/.cache/ccache
-            '
-
-      - name: Upload Linux AppImage
-        uses: actions/upload-artifact@v4
-        with:
-          name: msms-release-linux
-          path: out/MSMSManager-*-x86_64.AppImage
-          if-no-files-found: error
-
-  publish:
-    name: Publish release with SHA-256 manifest
-    runs-on: ubuntu-latest
-    needs: [windows, linux]
-    permissions:
-      contents: write
-    steps:
-      - name: Download platform packages
-        uses: actions/download-artifact@v4
-        with:
-          pattern: msms-release-*
-          path: release-files
-          merge-multiple: true
-
-      - name: Generate and verify SHA-256 manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd release-files
-          mapfile -t windows_packages < <(find . -maxdepth 1 -type f -name 'MSMSManager-*-win64.exe' -print)
-          mapfile -t linux_packages < <(find . -maxdepth 1 -type f -name 'MSMSManager-*-x86_64.AppImage' -print)
-          [[ "${#windows_packages[@]}" -eq 1 ]] || { echo "Expected exactly one Windows installer." >&2; exit 1; }
-          [[ "${#linux_packages[@]}" -eq 1 ]] || { echo "Expected exactly one Linux AppImage." >&2; exit 1; }
-          sha256sum "${windows_packages[0]#./}" "${linux_packages[0]#./}" > SHA256SUMS
-          sha256sum --check SHA256SUMS
-          cat SHA256SUMS
-
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: |
-            release-files/MSMSManager-*-win64.exe
-            release-files/MSMSManager-*-x86_64.AppImage
-            release-files/SHA256SUMS
-) {
-            throw "Release tags must use vMAJOR.MINOR.PATCH, e.g. v1.2.3."
-          }
-          $version = $tag.Substring(1)
-          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Install NSIS
-        run: choco install nsis --yes --no-progress
-
-      - name: Cache vcpkg static packages
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/vcpkg-binary-cache
-          key: vcpkg-windows-static-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}
-          restore-keys: |
-            vcpkg-windows-static-
-
-      - name: Install static wxWidgets with vcpkg
-        shell: pwsh
-        run: |
-          $vcpkgRoot = Join-Path $env:RUNNER_TEMP 'vcpkg-root'
-          $binaryCache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
-          New-Item -ItemType Directory -Force $binaryCache | Out-Null
-          git clone https://github.com/microsoft/vcpkg.git $vcpkgRoot
-          & (Join-Path $vcpkgRoot 'bootstrap-vcpkg.bat') -disableMetrics
-          $env:VCPKG_ROOT = $vcpkgRoot
-          $env:VCPKG_DEFAULT_BINARY_CACHE = $binaryCache
-          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "VCPKG_DEFAULT_BINARY_CACHE=$binaryCache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          & (Join-Path $vcpkgRoot 'vcpkg.exe') install wxwidgets:x64-windows-static
-
-      - name: Configure static release build
-        run: cmake --preset release-windows-static "-DMSMS_VERSION=$env:APP_VERSION"
-
-      - name: Build
-        run: cmake --build --preset release-windows-static --config Release --parallel 2
-
-      - name: Test
-        run: ctest --preset release-windows-static --output-on-failure --timeout 120
-
-      - name: Build installer
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force out | Out-Null
-          Copy-Item build\release-windows-static\Release\msms.exe out\msms-manager.exe
-          makensis "/DAPP_VERSION=$env:APP_VERSION" /DOUTPUT_DIR=out /DAPP_BINARY=out\msms-manager.exe /DLICENSE_FILE=LICENSE packaging\windows\installer.nsi
-          $installer = "out\MSMSManager-$env:APP_VERSION-win64.exe"
-          if (-not (Test-Path $installer)) { throw "NSIS did not create $installer" }
-          Get-Item $installer | Format-List Name,Length
-
-      - name: Upload Windows installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: msms-release-windows
-          path: out/MSMSManager-*-win64.exe
-          if-no-files-found: error
-
-  linux:
-    name: Build Linux AppImage (glibc 2.31)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Cache ccache objects
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: ccache-linux-glibc231-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}-${{ github.sha }}
-          restore-keys: |
-            ccache-linux-glibc231-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}-
-
-      - name: Cache wxWidgets source
-        uses: actions/cache@v4
-        with:
-          path: build/ci-linux/_deps/wxwidgets-src
-          key: wxwidgets-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}
-          restore-keys: |
-            wxwidgets-linux-
-
-      - name: Build and package in the Ubuntu 20.04 container
-        shell: bash
-        run: |
-          mkdir -p "$HOME/.cache/ccache"
-          docker run --rm \
-            -e "APP_VERSION=${GITHUB_REF_NAME#v}" \
-            -e CCACHE_DIR=/tmp/.cache/ccache \
-            -e CCACHE_BASEDIR=/src \
-            -e JOBS=2 \
-            -e APPIMAGE_EXTRACT_AND_RUN=1 \
-            -v "$GITHUB_WORKSPACE:/src" \
-            -v "$HOME/.cache/ccache:/tmp/.cache/ccache" \
-            -w /src \
-            ubuntu:20.04 bash -euxo pipefail -c '
-              apt-get update
-              DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
-                build-essential git pkg-config ninja-build python3-pip ccache curl file \
-                librsvg2-bin libgtk-3-dev libgirepository1.0-dev libjpeg-dev libpng-dev \
                 libtiff-dev libexpat1-dev libcurl4-openssl-dev
               python3 -m pip install --no-cache-dir cmake==3.27.9
               bash packaging/linux/appimage.sh
