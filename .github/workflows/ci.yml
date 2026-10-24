@@ -180,15 +180,16 @@ jobs:
         run: |
           sudo apt-get update
           # Assumes ubuntu-latest provides wxWidgets 3.2 development headers.
-          sudo apt-get install --yes clang-format clang-tidy cmake ninja-build ccache \
+          sudo apt-get install --yes clang-format-19 clang-tidy cmake ninja-build ccache \
             libwxgtk3.2-dev libsqlite3-dev
+          clang-format-19 --version
 
       - name: Check formatting
         shell: bash
         run: |
           mapfile -t files < <(git ls-files '*.cpp' '*.h' | grep -v '^src/db/sqlite3\.h$')
           if (("${#files[@]}" > 0)); then
-            clang-format --dry-run --Werror "${files[@]}"
+            clang-format-19 --dry-run --Werror "${files[@]}"
           fi
 
       - name: Configure for clang-tidy
