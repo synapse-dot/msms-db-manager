@@ -45,11 +45,15 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          $vcpkgRoot = Join-Path $env:RUNNER_TEMP 'vcpkg'
+          $vcpkgRoot = Join-Path $env:RUNNER_TEMP 'vcpkg-root'
+          $binaryCache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Force $binaryCache | Out-Null
           git clone https://github.com/microsoft/vcpkg.git $vcpkgRoot
           & (Join-Path $vcpkgRoot 'bootstrap-vcpkg.bat') -disableMetrics
+          $env:VCPKG_ROOT = $vcpkgRoot
+          $env:VCPKG_DEFAULT_BINARY_CACHE = $binaryCache
           "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "VCPKG_DEFAULT_BINARY_CACHE=$(Join-Path $vcpkgRoot 'archives')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VCPKG_DEFAULT_BINARY_CACHE=$binaryCache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           & (Join-Path $vcpkgRoot 'vcpkg.exe') install wxwidgets:x64-windows
 
       - name: Configure (Windows)
@@ -58,7 +62,7 @@ jobs:
 
       - name: Build (Windows)
         if: matrix.platform == 'windows'
-        run: cmake --build --preset ci-windows --parallel
+        run: cmake --build --preset ci-windows --config Release --parallel
 
       - name: Test (Windows)
         if: matrix.platform == 'windows'
@@ -111,7 +115,7 @@ jobs:
               apt-get update
               DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
                 build-essential git pkg-config ninja-build python3-pip ccache curl file \
-                util-linux libgtk-3-dev libjpeg-dev libpng-dev libtiff-dev \
+                util-linux librsvg2-bin libgtk-3-dev libjpeg-dev libpng-dev libtiff-dev \
                 libexpat1-dev libcurl4-openssl-dev
               python3 -m pip install --no-cache-dir cmake==3.27.9
 
@@ -147,7 +151,8 @@ EOF
   <path d="M54 180V76h24l50 61 50-61h24v104h-27v-62l-47 56-47-56v62z" fill="#4ADE80"/>
 </svg>
 EOF
-              linuxdeploy --appdir AppDir --plugin gtk --desktop-file AppDir/msms-manager.desktop --icon-file AppDir/msms-manager.svg --output appimage
+              rsvg-convert -w 256 -h 256 AppDir/msms-manager.svg > AppDir/msms-manager.png
+              linuxdeploy --appdir AppDir --plugin gtk --desktop-file AppDir/msms-manager.desktop --icon-file AppDir/msms-manager.png --output appimage
               appimage=$(find . -maxdepth 1 -type f -name "*.AppImage" -print -quit)
               test -n "$appimage"
               cp "$appimage" out/MSMS_Manager-linux-x64.AppImage
