@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: 'Build and test (${{ matrix.name }})'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows / MSVC
+            os: windows-latest
+            platform: windows
+          - name: Linux / glibc 2.31
+            os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        if: matrix.platform == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install wxWidgets with vcpkg
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$env:RUNNER_TEMP\vcpkg"
+          & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+          & "$env:RUNNER_TEMP\vcpkg\vcpkg.exe" install wxwidgets:x64-windows
+          "VCPKG_ROOT=$env:RUNNER_TEMP\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Configure (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -DBUILD_TESTING=ON
+
+      - name: Build (Windows)
+        if: matrix.platform == 'windows'
+        run: cmake --build build --config Release --parallel
+
+      - name: Test (Windows)
+        if: matrix.platform == 'windows'
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+            build-essential git pkg-config ninja-build python3-pip \
+            libgtk-3-dev libglib2.0-dev libjpeg-dev libpng-dev \
+            libtiff-dev libexpat1-dev libcurl4-openssl-dev
+          python3 -m pip install --user 'cmake==3.27.9'
+
+      - name: Configure, build and test (Linux; Ubuntu 20.04 userspace)
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
+
+    container:
+      image: ubuntu:20.04
