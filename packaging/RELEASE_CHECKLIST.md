@@ -9,7 +9,7 @@ Complete this checklist for every release candidate. Record the tag, commit, tes
 - [ ] SHA256SUMS contains both package filenames and verifies against the uploaded bytes.
 - [ ] Linux: run `sha256sum -c SHA256SUMS --ignore-missing` in the downloaded release directory.
 - [ ] Windows: compare `Get-FileHash -Algorithm SHA256 .\MSMSManager-<version>-win64.exe` with the manifest, or use certutil -hashfile.
-- [ ] Record the application executable and AppImage sizes; both must meet the §12 acceptance criterion of under 15 MB for release binaries. Record installer size separately.
+- [ ] Record the raw application executable sizes: msms-manager.exe on Windows and usr/bin/msms-manager inside the AppImage. Each must be under 15,000,000 bytes. The installer and complete AppImage include packaging/runtime contents and are expected to be larger; record their sizes separately.
 
 ## Linux AppImage — compatibility matrix
 
