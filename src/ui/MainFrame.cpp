@@ -196,6 +196,7 @@ MainFrame::MainFrame(DbService& dbService)
     SetSizer(frameSizer);
 
     BuildMenuBar();
+    Bind(wxEVT_CLOSE_WINDOW, &MainFrame::OnClose, this);
     m_navigationTree->Bind(wxEVT_TREE_SEL_CHANGING,
                            &MainFrame::OnNavigationSelectionChanging, this);
 
@@ -360,7 +361,7 @@ bool MainFrame::ConfirmLeaveActiveForm() {
     auto* layout = new wxBoxSizer(wxVERTICAL);
     auto* message = new wxStaticText(
         &dialog, wxID_ANY,
-        "This form has unsaved changes. Save them before leaving, discard them, or cancel navigation.");
+        "This form has unsaved changes. Save before continuing, discard the changes, or cancel this action.");
     message->Wrap(420);
     layout->Add(message, 0, wxALL, 14);
 
@@ -912,6 +913,10 @@ bool MainFrame::SetWorkspaceView(wxWindow* view) {
 }
 
 void MainFrame::OnOpenDatabase(wxCommandEvent& /*event*/) {
+    if (!ConfirmLeaveActiveForm()) {
+        return;
+    }
+
     wxFileDialog dialog(
         this, "Open Database", wxEmptyString, wxEmptyString,
         "SQLite Database (*.db;*.sqlite;*.sqlite3)|*.db;*.sqlite;*.sqlite3|All Files (*.*)|*.*",
@@ -941,6 +946,10 @@ void MainFrame::OnOpenDatabase(wxCommandEvent& /*event*/) {
 }
 
 void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
+    if (!ConfirmLeaveActiveForm()) {
+        return;
+    }
+
     wxFileDialog dialog(this, "Create New Database", wxEmptyString, "members.db",
                         "SQLite Database (*.db)|*.db|All Files (*.*)|*.*", wxFD_SAVE);
     if (dialog.ShowModal() != wxID_OK) {
@@ -955,12 +964,13 @@ void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
     }
 
     if (wxFileExists(path)) {
-        const int answer = wxMessageBox(
+        wxMessageDialog confirmation(
+            this,
             wxString("The file '") + path +
                 "' already exists. Creating a new database will replace this file and all records "
                 "it contains. This action cannot be undone.\n\nDo you want to continue?",
-            "Confirm Database Replacement", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this);
-        if (answer != wxYES) {
+            "Confirm Database Replacement", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
+        if (confirmation.ShowModal() != wxID_YES) {
             return;
         }
     }
@@ -1022,6 +1032,10 @@ void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
 }
 
 void MainFrame::OnSaveBackup(wxCommandEvent& /*event*/) {
+    if (!ConfirmLeaveActiveForm()) {
+        return;
+    }
+
     if (!m_dbService.IsOpen()) {
         ShowDatabaseError(this, "Backup Error", "There is no open database to back up.");
         return;
@@ -1095,14 +1109,15 @@ void MainFrame::OnRestoreBackup(wxCommandEvent& /*event*/) {
     }
 
     const wxString activePath = m_dbService.GetDbPath();
-    const int answer = wxMessageBox(
+    wxMessageDialog confirmation(
+        this,
         wxString("Restoring a backup will replace all records in '") +
             wxFileName(activePath).GetFullName() +
             "'. A timestamped safety copy of the current database will be saved beside it first. "
             "Only a backup that passes integrity and schema validation will be installed.\n\n"
             "Continue to choose a backup file?",
-        "Confirm Database Restore", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this);
-    if (answer != wxYES) {
+        "Confirm Database Restore", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
+    if (confirmation.ShowModal() != wxID_YES) {
         return;
     }
 
@@ -1153,7 +1168,17 @@ void MainFrame::OnRestoreBackup(wxCommandEvent& /*event*/) {
 }
 
 void MainFrame::OnExit(wxCommandEvent& /*event*/) {
-    Close(true);
+    // Route menu exit through the close event so it uses the same dirty-form guard
+    // as the window manager's close button.
+    Close(false);
+}
+
+void MainFrame::OnClose(wxCloseEvent& event) {
+    if (event.CanVeto() && !ConfirmLeaveActiveForm()) {
+        event.Veto();
+        return;
+    }
+    event.Skip();
 }
 
 void MainFrame::OnAbout(wxCommandEvent& /*event*/) {
