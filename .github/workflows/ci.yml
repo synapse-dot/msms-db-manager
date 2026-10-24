@@ -36,7 +36,7 @@ jobs:
         if: matrix.platform == 'windows'
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}\\vcpkg\\archives
+          path: ${{ runner.temp }}\vcpkg\archives
           key: vcpkg-windows-x64-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}
           restore-keys: |
             vcpkg-windows-x64-
@@ -45,15 +45,16 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          git clone https://github.com/microsoft/vcpkg.git "$env:RUNNER_TEMP\\vcpkg"
-          & "$env:RUNNER_TEMP\\vcpkg\\bootstrap-vcpkg.bat" -disableMetrics
-          "VCPKG_ROOT=$env:RUNNER_TEMP\\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "VCPKG_DEFAULT_BINARY_CACHE=$env:RUNNER_TEMP\\vcpkg\\archives" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          & "$env:RUNNER_TEMP\\vcpkg\\vcpkg.exe" install wxwidgets:x64-windows
+          $vcpkgRoot = Join-Path $env:RUNNER_TEMP 'vcpkg'
+          git clone https://github.com/microsoft/vcpkg.git $vcpkgRoot
+          & (Join-Path $vcpkgRoot 'bootstrap-vcpkg.bat') -disableMetrics
+          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VCPKG_DEFAULT_BINARY_CACHE=$(Join-Path $vcpkgRoot 'archives')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & (Join-Path $vcpkgRoot 'vcpkg.exe') install wxwidgets:x64-windows
 
       - name: Configure (Windows)
         if: matrix.platform == 'windows'
-        run: cmake --preset ci-windows -A x64
+        run: cmake --preset ci-windows
 
       - name: Build (Windows)
         if: matrix.platform == 'windows'
@@ -62,6 +63,22 @@ jobs:
       - name: Test (Windows)
         if: matrix.platform == 'windows'
         run: ctest --preset ci-windows
+
+      - name: Stage artifact (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item build\ci-windows\Release\msms.exe out\msms-manager.exe
+          Copy-Item "$env:VCPKG_ROOT\installed\x64-windows\bin\*.dll" out\ -ErrorAction SilentlyContinue
+
+      - name: Upload artifact (Windows)
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: msms-manager-windows-x64
+          path: out/
+          if-no-files-found: error
 
       - name: Cache ccache objects
         if: matrix.platform == 'linux'
@@ -77,42 +94,88 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/ci-linux/_deps/wxwidgets-src
-          key: wxwidgets-3.2.5-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}
+          key: wxwidgets-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}
           restore-keys: |
-            wxwidgets-3.2.5-linux-
+            wxwidgets-linux-
 
-      - name: Configure, build and test (Linux; Ubuntu 20.04 container)
+      - name: Configure, build, test and package (Linux; Ubuntu 20.04 container)
         if: matrix.platform == 'linux'
         shell: bash
         run: |
           mkdir -p "$HOME/.cache/ccache"
-          docker run --rm \\
-            -v "$GITHUB_WORKSPACE:/src" \\
-            -v "$HOME/.cache/ccache:/root/.cache/ccache" \\
-            -w /src \\
+          docker run --rm \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/src" \
+            -v "$HOME/.cache/ccache:/tmp/.cache/ccache" \
+            -w /src \
             ubuntu:20.04 bash -euxo pipefail -c '
               apt-get update
-              DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \\
-                build-essential git pkg-config ninja-build python3-pip ccache curl file \\
-                libgtk-3-dev libglib2.0-dev libjpeg-dev libpng-dev \\
-                libtiff-dev libexpat1-dev libcurl4-openssl-dev
+              DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+                build-essential git pkg-config ninja-build python3-pip ccache curl file \
+                util-linux libgtk-3-dev libjpeg-dev libpng-dev libtiff-dev \
+                libexpat1-dev libcurl4-openssl-dev
               python3 -m pip install --no-cache-dir cmake==3.27.9
 
-              curl -fsSL -o /usr/local/bin/linuxdeploy \\
+              curl -fsSL -o /usr/local/bin/linuxdeploy \
                 https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-              curl -fsSL -o /usr/local/bin/linuxdeploy-plugin-gtk \\
+              curl -fsSL -o /usr/local/bin/linuxdeploy-plugin-gtk \
                 https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk.sh
               chmod +x /usr/local/bin/linuxdeploy /usr/local/bin/linuxdeploy-plugin-gtk
 
-              export PATH="/usr/local/bin:$PATH"
-              export CCACHE_DIR=/root/.cache/ccache
-              export CCACHE_BASEDIR=/src
-              ccache --show-stats
-              cmake --preset ci-linux
-              cmake --build --preset ci-linux --parallel
-              ctest --preset ci-linux
-              ccache --show-stats
+              groupadd --gid "$HOST_GID" ciuser || true
+              useradd --uid "$HOST_UID" --gid "$HOST_GID" --no-create-home --home-dir /tmp --shell /usr/sbin/nologin ciuser || true
+              mkdir -p /tmp/.cache/ccache
+              chown -R "$HOST_UID:$HOST_GID" /tmp/.cache/ccache
+
+              runuser -u ciuser -- env HOME=/tmp PATH="/usr/local/bin:$PATH" \
+                CCACHE_DIR=/tmp/.cache/ccache CCACHE_BASEDIR=/src \
+                APPIMAGE_EXTRACT_AND_RUN=1 DEPLOY_GTK_VERSION=3 \
+                bash -euxo pipefail -c "
+                  ccache --show-stats
+                  cmake --preset ci-linux
+                  cmake --build --preset ci-linux --parallel
+                  ctest --preset ci-linux
+                  mkdir -p AppDir/usr/bin out
+                  cp build/ci-linux/msms AppDir/usr/bin/msms-manager
+                  cat > AppDir/msms-manager.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=MSMS Manager
+Exec=msms-manager
+Icon=msms-manager
+Categories=Office;Database;
+EOF
+                  cat > AppDir/msms-manager.svg <<EOF
+<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"256\" height=\"256\" viewBox=\"0 0 256 256\">
+  <rect x=\"16\" y=\"16\" width=\"224\" height=\"224\" rx=\"36\" fill=\"#0B0F14\"/>
+  <path d=\"M54 180V76h24l50 61 50-61h24v104h-27v-62l-47 56-47-56v62z\" fill=\"#4ADE80\"/>
+</svg>
+EOF
+                  linuxdeploy --appdir AppDir --plugin gtk --desktop-file AppDir/msms-manager.desktop --icon-file AppDir/msms-manager.svg --output appimage
+                  appimage=$(find . -maxdepth 1 -type f -name \"*.AppImage\" -print -quit)
+                  test -n \"$appimage\"
+                  cp \"$appimage\" out/MSMS_Manager-linux-x64.AppImage
+                  cp build/ci-linux/msms out/msms-manager-linux-x64
+                  ccache --show-stats
+                "
             '
+
+      - name: Upload artifact (Linux binary)
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: msms-manager-linux-x64-binary
+          path: out/msms-manager-linux-x64
+          if-no-files-found: error
+
+      - name: Upload artifact (Linux AppImage)
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: msms-manager-linux-x64-appimage
+          path: out/MSMS_Manager-linux-x64.AppImage
+          if-no-files-found: error
 
   advisory-quality:
     name: Advisory formatting and static analysis
@@ -125,7 +188,8 @@ jobs:
       - name: Install quality tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes clang-format clang-tidy cmake ninja-build ccache \\
+          # Assumes ubuntu-latest provides wxWidgets 3.2 development headers.
+          sudo apt-get install --yes clang-format clang-tidy cmake ninja-build ccache \
             libwxgtk3.2-dev libsqlite3-dev
 
       - name: Check formatting
@@ -137,12 +201,16 @@ jobs:
           fi
 
       - name: Configure for clang-tidy
-        run: cmake --preset ci-linux
+        run: cmake --preset host-linux
 
       - name: Run clang-tidy (advisory)
         shell: bash
         run: |
           mapfile -t files < <(git ls-files '*.cpp')
           if (("${#files[@]}" > 0)); then
-            clang-tidy -p build/ci-linux "${files[@]}"
+            clang-tidy -p build/host-linux "${files[@]}"
           fi
+
+      - name: Report advisory failure
+        if: failure()
+        run: echo "::warning::Advisory checks failed; see logs"
