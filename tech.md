@@ -282,8 +282,8 @@ The stack is correctly implemented when:
 1. A clean checkout builds on both CI platforms with the documented commands, with no manual dependency installation beyond the platform toolchain.
 2. The release binary is under **15 MB** on each platform.
 3. The application starts on a cold system in under **1 second**.
-4. The Linux AppImage runs successfully on **Debian 11, Ubuntu 20.04, Ubuntu 22.04, Ubuntu 24.04, Fedora 39, and current Arch Linux** — verified manually in a release checklist.
-5. The Windows installer runs successfully on **Windows 10 21H2 and Windows 11 22H2** — verified manually in a release checklist.
+4. The Linux AppImage runs successfully on **Debian 11, Ubuntu 20.04, Ubuntu 22.04, Ubuntu 24.04, Fedora 39, and current Arch Linux** — verified manually using [the release checklist](packaging/RELEASE_CHECKLIST.md).
+5. The Windows installer runs successfully on **Windows 10 21H2 and Windows 11 22H2** — verified manually using [the release checklist](packaging/RELEASE_CHECKLIST.md).
 6. `PRAGMA foreign_keys = ON` is verifiably set on every connection (covered by a unit test).
 7. Backup and restore pass the unit-test suite, including the interrupted-restore rollback case.
 8. `clang-format` and `clang-tidy` pass without changes on `main`.
@@ -293,5 +293,5 @@ The stack is correctly implemented when:
 
 ## 13. Open items
 
-- **Release checksum workflow** — the mechanism for generating and publishing `SHA256SUMS` alongside each release should be added to the release workflow before the first public release.
+- **Release packaging and checksums** — the tagged-release workflow is implemented in `.github/workflows/release.yml`. It builds the static Windows installer and static-wxGTK AppImage, generates `SHA256SUMS`, verifies the manifest, and publishes all three release files. Manual cross-platform sign-off remains required using [the release checklist](packaging/RELEASE_CHECKLIST.md).
 - **wxSQLite3 fallback** — revisit only if the `DbService` layer exceeds roughly 300 lines of wrapper code.
