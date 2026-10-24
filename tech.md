@@ -191,7 +191,7 @@ No manual dependency configuration is required on a clean checkout: CMake fetche
 
 ## 7. CI: GitHub Actions
 
-Workflow `.github/workflows/build.yml`, **two-platform matrix**:
+CI workflow `.github/workflows/ci.yml`, **two-platform matrix**. Tagged release packaging is handled separately by `.github/workflows/release.yml`:
 
 - `windows-latest` (x86_64)
 - `ubuntu-20.04` (container — **pinned, not `ubuntu-latest`**), which provides glibc 2.31 and matches the Linux glibc floor in §2.
@@ -201,8 +201,8 @@ Why Ubuntu 20.04 is pinned: building on a newer runner would raise the required 
 Per-platform steps:
 
 1. Install dependencies.
-   - **Windows:** `vcpkg` installs wxWidgets and Catch2.
-   - **Linux:** `apt-get install` GTK 3 development packages, `ccache`, `linuxdeploy`, `linuxdeploy-plugin-gtk`.
+   - **Windows:** `vcpkg` installs wxWidgets; CMake FetchContent supplies Catch2. Release builds use the `x64-windows-static` triplet.
+   - **Linux:** the CI/release container installs GTK 3 development packages, `ccache`, and the runtime tools needed by `linuxdeploy` plus `linuxdeploy-plugin-gtk`.
 2. Restore cache: **ccache** on Linux, vcpkg prefix and CMake build tree on Windows. Caching wxWidgets’ build result is the difference between a 20-minute and a 4-minute CI run.
 3. Configure → build → run tests.
 4. Package artefact (see §8).
