@@ -38,13 +38,13 @@ bool SameFileIdentity(const wxString& first, const wxString& second) {
 #ifdef _WIN32
     const wchar_t* firstWide = first.wc_str();
     const wchar_t* secondWide = second.wc_str();
-    HANDLE firstHandle = CreateFileW(firstWide.data(), FILE_READ_ATTRIBUTES,
+    HANDLE firstHandle = CreateFileW(firstWide, FILE_READ_ATTRIBUTES,
                                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                      nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (firstHandle == INVALID_HANDLE_VALUE) {
         return false;
     }
-    HANDLE secondHandle = CreateFileW(secondWide.data(), FILE_READ_ATTRIBUTES,
+    HANDLE secondHandle = CreateFileW(secondWide, FILE_READ_ATTRIBUTES,
                                       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                       nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (secondHandle == INVALID_HANDLE_VALUE) {
@@ -218,7 +218,7 @@ bool AtomicReplaceFile(const wxString& stagedPath, const wxString& workingPath,
 #ifdef _WIN32
     const wchar_t* stagedWide = stagedPath.wc_str();
     const wchar_t* workingWide = workingPath.wc_str();
-    if (MoveFileExW(stagedWide.data(), workingWide.data(),
+    if (MoveFileExW(stagedWide, workingWide,
                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         return true;
     }
@@ -447,7 +447,7 @@ bool DbService::AcquirePathLock(const wxString& dbPath, bool exclusive, wxString
 
 #ifdef _WIN32
     const wchar_t* wideLockPath = lockPath.wc_str();
-    HANDLE handle = CreateFileW(wideLockPath.data(), GENERIC_READ | GENERIC_WRITE,
+    HANDLE handle = CreateFileW(wideLockPath, GENERIC_READ | GENERIC_WRITE,
                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                                 OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (handle == INVALID_HANDLE_VALUE) {
