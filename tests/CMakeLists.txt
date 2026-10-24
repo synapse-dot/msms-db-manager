@@ -2,9 +2,10 @@
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_db_service.cpp")
     add_executable(test_db_service
         test_db_service.cpp
+        test_main.cpp
     )
     target_link_libraries(test_db_service PRIVATE
-        Catch2::Catch2WithMain
+        Catch2::Catch2
         msms_db
     )
     target_compile_definitions(test_db_service PRIVATE
@@ -22,9 +23,10 @@ endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_validation.cpp")
     add_executable(test_validation
         test_validation.cpp
+        test_main.cpp
     )
     target_link_libraries(test_validation PRIVATE
-        Catch2::Catch2WithMain
+        Catch2::Catch2
         msms_db
         wxWidgets::Core
     )
