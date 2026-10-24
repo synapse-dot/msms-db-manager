@@ -10,11 +10,7 @@ project(msms-manager
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
-# Enable position-independent code across targets
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
-# Export compile commands for clangd / clang-tidy
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ENABLE_VERBOSE_LOGGING "Enable verbose logging in debug mode" OFF)
@@ -24,10 +20,8 @@ include(FetchContent)
 # ---------------------------------------------------------------------------
 # wxWidgets 3.2 Configuration with Fallback
 # ---------------------------------------------------------------------------
-# Attempt to find wxWidgets on the host system first (minimum 3.2.0)
 find_package(wxWidgets 3.2 COMPONENTS core base adv QUIET)
 if(NOT wxWidgets_FOUND)
-    # Retry with alternate capitalization or without version constraint
     find_package(wxWidgets COMPONENTS Core Base Adv QUIET)
     if(NOT wxWidgets_FOUND)
         find_package(wxWidgets COMPONENTS core base QUIET)
@@ -37,7 +31,7 @@ endif()
 if(wxWidgets_FOUND)
     message(STATUS "Found host wxWidgets ${wxWidgets_VERSION_STRING}: ${wxWidgets_LIBRARIES}")
 
-    # Standardize imported targets: wxWidgets::Base, wxWidgets::Core, wxWidgets::Adv
+    # The legacy FindwxWidgets module exports variables rather than modern targets.
     if(NOT TARGET wxWidgets::Base)
         add_library(wxWidgets::Base INTERFACE IMPORTED GLOBAL)
         if(wxWidgets_INCLUDE_DIRS)
@@ -50,12 +44,10 @@ if(wxWidgets_FOUND)
             target_link_libraries(wxWidgets::Base INTERFACE ${wxWidgets_LIBRARIES})
         endif()
     endif()
-
     if(NOT TARGET wxWidgets::Core)
         add_library(wxWidgets::Core INTERFACE IMPORTED GLOBAL)
         target_link_libraries(wxWidgets::Core INTERFACE wxWidgets::Base)
     endif()
-
     if(NOT TARGET wxWidgets::Adv)
         add_library(wxWidgets::Adv INTERFACE IMPORTED GLOBAL)
         target_link_libraries(wxWidgets::Adv INTERFACE wxWidgets::Base)
@@ -74,13 +66,32 @@ else()
     set(wxBUILD_DEMOS OFF CACHE BOOL "Disable wxWidgets demos" FORCE)
     set(wxBUILD_INSTALL OFF CACHE BOOL "Disable wxWidgets installation targets" FORCE)
     FetchContent_MakeAvailable(wxWidgets)
+
+    # wxWidgets' own CMake build exports wx:: targets. Adapt them to the
+    # wxWidgets:: names used by this project and its tests.
+    if(TARGET wx::base AND NOT TARGET wxWidgets::Base)
+        add_library(wxWidgets::Base INTERFACE IMPORTED GLOBAL)
+        target_link_libraries(wxWidgets::Base INTERFACE wx::base)
+    endif()
+    if(TARGET wx::core AND NOT TARGET wxWidgets::Core)
+        add_library(wxWidgets::Core INTERFACE IMPORTED GLOBAL)
+        target_link_libraries(wxWidgets::Core INTERFACE wx::core)
+    endif()
+    if(TARGET wx::adv AND NOT TARGET wxWidgets::Adv)
+        add_library(wxWidgets::Adv INTERFACE IMPORTED GLOBAL)
+        target_link_libraries(wxWidgets::Adv INTERFACE wx::adv)
+    endif()
+
+    if(NOT TARGET wxWidgets::Base OR NOT TARGET wxWidgets::Core)
+        message(FATAL_ERROR
+            "wxWidgets was built with FetchContent, but its expected wx::base/wx::core targets were not found.")
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------
 # Catch2 v3 for Automated Unit Testing
 # ---------------------------------------------------------------------------
 option(BUILD_TESTING "Build automated unit test suite" ON)
-
 if(BUILD_TESTING)
     enable_testing()
     message(STATUS "Configuring Catch2 (v3.x) via FetchContent...")
@@ -98,12 +109,8 @@ endif()
 # ---------------------------------------------------------------------------
 # Project Targets
 # ---------------------------------------------------------------------------
-# SQLite vendored library target (ready for src/db/sqlite3.c)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/db/sqlite3.c")
-    add_library(sqlite3_lib STATIC
-        src/db/sqlite3.c
-        src/db/sqlite3.h
-    )
+    add_library(sqlite3_lib STATIC src/db/sqlite3.c src/db/sqlite3.h)
     target_include_directories(sqlite3_lib PUBLIC src/db)
     target_compile_definitions(sqlite3_lib PUBLIC SQLITE_THREADSAFE=1)
     if(UNIX AND NOT APPLE)
@@ -112,7 +119,6 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/db/sqlite3.c")
     add_library(SQLite::SQLite3 ALIAS sqlite3_lib)
 endif()
 
-# Database service and utilities library target
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/db/DbService.cpp")
     add_library(msms_db STATIC
         src/db/DbService.cpp
@@ -120,36 +126,20 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/db/DbService.cpp")
         src/util/ErrorReporter.cpp
         src/util/ErrorReporter.h
     )
-    target_include_directories(msms_db PUBLIC
-        src
-        src/db
-        src/util
-    )
-    target_link_libraries(msms_db PUBLIC
-        sqlite3_lib
-        wxWidgets::Base
-    )
+    target_include_directories(msms_db PUBLIC src src/db src/util)
+    target_link_libraries(msms_db PUBLIC sqlite3_lib wxWidgets::Base)
 endif()
 
-# Application executable
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
-    file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS
-        "src/*.cpp"
-        "src/*.h"
-    )
+    file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS "src/*.cpp" "src/*.h")
     add_executable(msms ${APP_SOURCES})
     target_include_directories(msms PRIVATE src)
-    target_link_libraries(msms PRIVATE
-        wxWidgets::Core
-        wxWidgets::Base
-        wxWidgets::Adv
-    )
+    target_link_libraries(msms PRIVATE wxWidgets::Core wxWidgets::Base wxWidgets::Adv)
     if(TARGET sqlite3_lib)
         target_link_libraries(msms PRIVATE sqlite3_lib)
     endif()
 endif()
 
-# Tests subdirectory
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()
