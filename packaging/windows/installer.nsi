@@ -123,6 +123,7 @@ Section "MSMS Manager" SEC_MAIN
   ; Write and verify the new uninstaller before changing files or registry data.
   StrCpy $UninstallerWriteSucceeded "0"
   ClearErrors
+  WriteUninstaller "$INSTDIR\Uninstall.exe"
   IfErrors uninstaller_write_failed
   IfFileExists "$INSTDIR\Uninstall.exe" uninstaller_write_succeeded uninstaller_write_failed
 
@@ -181,7 +182,6 @@ legacy_registration_snapshot_done:
   ; Static release executable: no wxWidgets or MSVC runtime DLLs are packaged.
   File /oname=msms-manager.exe "${APP_BINARY}"
   File /oname=LICENSE.txt "${LICENSE_FILE}"
-  WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   CreateDirectory "$SMPROGRAMS\MSMS Manager"
   CreateShortcut "$SMPROGRAMS\MSMS Manager\MSMS Manager.lnk" "$INSTDIR\msms-manager.exe"
