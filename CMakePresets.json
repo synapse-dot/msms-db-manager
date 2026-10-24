@@ -60,7 +60,9 @@
         "CMAKE_BUILD_TYPE": "Release",
         "BUILD_TESTING": "ON",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-windows"
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "CMAKE_CXX_FLAGS_RELEASE": "",
+        "CMAKE_C_FLAGS_RELEASE": ""
       },
       "generator": "Visual Studio 17 2022",
       "architecture": {
