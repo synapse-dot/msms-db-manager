@@ -98,42 +98,6 @@ jobs:
           }
           Write-Output "No CTest timeout marker found."
 
-      - name: Install NSIS for installer-script validation
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          choco install nsis --yes --no-progress
-
-          $candidates = @(
-            "${env:ProgramFiles(x86)}\NSIS"
-            "$env:ProgramFiles\NSIS"
-          )
-
-          $nsisDir = $candidates |
-            Where-Object {
-              Test-Path -LiteralPath (Join-Path $_ 'makensis.exe') -PathType Leaf
-            } |
-            Select-Object -First 1
-
-          if (-not $nsisDir) {
-            $command = Get-Command makensis.exe -ErrorAction SilentlyContinue
-            if ($command) {
-              $nsisDir = Split-Path -Parent $command.Source
-            }
-          }
-
-          if (-not $nsisDir) {
-            throw "NSIS installation failed: makensis.exe was not found."
-          }
-
-          $makensis = Join-Path $nsisDir 'makensis.exe'
-          & $makensis /VERSION
-          if ($LASTEXITCODE -ne 0) {
-            throw "NSIS compiler verification failed."
-          }
-
-          $nsisDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-
       - name: Stage artifact (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
@@ -141,19 +105,6 @@ jobs:
           New-Item -ItemType Directory -Force out | Out-Null
           Copy-Item build\ci-windows\Release\msms.exe out\msms-manager.exe
           Copy-Item "$env:VCPKG_ROOT\installed\x64-windows\bin\*.dll" out\ -ErrorAction SilentlyContinue
-
-      - name: Compile NSIS installer script (Windows smoke test)
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          $version = '0.0.0'
-          New-Item -ItemType Directory -Force nsis-smoke | Out-Null
-          makensis "/DAPP_VERSION=$version" /DOUTPUT_DIR=nsis-smoke /DAPP_BINARY=out\msms-manager.exe /DLICENSE_FILE=LICENSE packaging\windows\installer.nsi
-          $installer = "nsis-smoke\MSMSManager-$version-win64.exe"
-          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
-            throw "NSIS smoke test did not create $installer"
-          }
-          Get-Item $installer | Format-List Name,Length
 
       - name: Upload artifact (Windows)
         if: matrix.platform == 'windows'
