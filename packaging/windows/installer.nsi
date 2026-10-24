@@ -62,11 +62,18 @@ VIAddVersionKey /LANG=1033 "FileDescription" "${PRODUCT_NAME} installer"
 Function .onInit
   ; Serialize setup and uninstaller processes so they cannot interleave the
   ; registration checks and legacy-key migration.
+  System::Call 'kernel32::SetLastError(i 0)'
   System::Call 'kernel32::CreateMutexW(p 0, i 0, w "Global\MSMSManagerSetupMutex-v1") p .r1 ?e'
   Pop $R0
+  StrCmp $1 "0" setup_mutex_failed
   StrCmp $R0 "0" setup_mutex_acquired
+  ; A nonzero last-error with a valid handle means another setup owns the name.
   System::Call 'kernel32::CloseHandle(p r1) i .r0'
-  MessageBox MB_OK|MB_ICONEXCLAMATION "Another MSMS Manager setup or uninstaller is already running, or the setup lock could not be acquired. Close it and try again."
+  MessageBox MB_OK|MB_ICONEXCLAMATION "Another MSMS Manager setup or uninstaller is already running. Close it and try again."
+  Abort
+
+setup_mutex_failed:
+  MessageBox MB_OK|MB_ICONSTOP "Could not acquire the MSMS Manager setup lock. No installation changes were made."
   Abort
 
 setup_mutex_acquired:
@@ -99,11 +106,18 @@ FunctionEnd
 
 Function un.onInit
   ; Use the same lock as setup to prevent install/uninstall overlap.
+  System::Call 'kernel32::SetLastError(i 0)'
   System::Call 'kernel32::CreateMutexW(p 0, i 0, w "Global\MSMSManagerSetupMutex-v1") p .r1 ?e'
   Pop $R0
+  StrCmp $1 "0" un_setup_mutex_failed
   StrCmp $R0 "0" un_setup_mutex_acquired
+  ; A nonzero last-error with a valid handle means another setup owns the name.
   System::Call 'kernel32::CloseHandle(p r1) i .r0'
-  MessageBox MB_OK|MB_ICONEXCLAMATION "Another MSMS Manager setup or uninstaller is already running, or the setup lock could not be acquired. Close it and try again."
+  MessageBox MB_OK|MB_ICONEXCLAMATION "Another MSMS Manager setup or uninstaller is already running. Close it and try again."
+  Abort
+
+un_setup_mutex_failed:
+  MessageBox MB_OK|MB_ICONSTOP "Could not acquire the MSMS Manager setup lock. Uninstallation has been stopped."
   Abort
 
 un_setup_mutex_acquired:
