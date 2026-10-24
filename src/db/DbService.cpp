@@ -38,13 +38,13 @@ bool SameFileIdentity(const wxString& first, const wxString& second) {
 #ifdef _WIN32
     const wchar_t* firstWide = first.wc_str();
     const wchar_t* secondWide = second.wc_str();
-    HANDLE firstHandle = CreateFileW(firstWide.data(), FILE_READ_ATTRIBUTES,
+    HANDLE firstHandle = CreateFileW(firstWide, FILE_READ_ATTRIBUTES,
                                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                      nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (firstHandle == INVALID_HANDLE_VALUE) {
         return false;
     }
-    HANDLE secondHandle = CreateFileW(secondWide.data(), FILE_READ_ATTRIBUTES,
+    HANDLE secondHandle = CreateFileW(secondWide, FILE_READ_ATTRIBUTES,
                                       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                       nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (secondHandle == INVALID_HANDLE_VALUE) {
@@ -64,8 +64,8 @@ bool SameFileIdentity(const wxString& first, const wxString& second) {
 #else
     const wxScopedCharBuffer firstUtf8 = NormalizeFullPath(first).ToUTF8();
     const wxScopedCharBuffer secondUtf8 = NormalizeFullPath(second).ToUTF8();
-    struct stat firstInfo {};
-    struct stat secondInfo {};
+    struct stat firstInfo{};
+    struct stat secondInfo{};
     if (::stat(firstUtf8.data(), &firstInfo) != 0 || ::stat(secondUtf8.data(), &secondInfo) != 0) {
         return false;
     }
@@ -105,8 +105,7 @@ const std::map<std::string, std::vector<ExpectedColumn>>& ExpectedColumns() {
           {"end_time", "TEXT", false, nullptr, 0},
           {"location", "TEXT", false, nullptr, 0}}},
         {"meeting_attendance",
-         {{"meeting_id", "INTEGER", true, nullptr, 1},
-          {"member_id", "INTEGER", true, nullptr, 2}}},
+         {{"meeting_id", "INTEGER", true, nullptr, 1}, {"member_id", "INTEGER", true, nullptr, 2}}},
         {"projects",
          {{"project_id", "INTEGER", false, nullptr, 1},
           {"title", "TEXT", true, nullptr, 0},
@@ -200,10 +199,11 @@ const std::map<std::string, std::vector<ExpectedForeignKey>>& ExpectedForeignKey
 std::string ForeignKeySignature(const std::string& fromColumn, const std::string& targetTable,
                                 const std::string& targetColumn, const std::string& onUpdate,
                                 const std::string& onDelete) {
-    std::string signature = fromColumn + "|" + targetTable + "|" + targetColumn + "|" + onUpdate +
-                            "|" + onDelete;
-    std::transform(signature.begin(), signature.end(), signature.begin(),
-                   [](unsigned char character) { return static_cast<char>(std::toupper(character)); });
+    std::string signature =
+        fromColumn + "|" + targetTable + "|" + targetColumn + "|" + onUpdate + "|" + onDelete;
+    std::transform(
+        signature.begin(), signature.end(), signature.begin(),
+        [](unsigned char character) { return static_cast<char>(std::toupper(character)); });
     return signature;
 }
 
@@ -218,8 +218,7 @@ bool AtomicReplaceFile(const wxString& stagedPath, const wxString& workingPath,
 #ifdef _WIN32
     const wchar_t* stagedWide = stagedPath.wc_str();
     const wchar_t* workingWide = workingPath.wc_str();
-    if (MoveFileExW(stagedWide.data(), workingWide.data(),
-                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    if (MoveFileExW(stagedWide, workingWide, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         return true;
     }
     if (outError) {
@@ -233,8 +232,8 @@ bool AtomicReplaceFile(const wxString& stagedPath, const wxString& workingPath,
         return true;
     }
     if (outError) {
-        *outError = wxString::Format("Atomic file replacement failed (system error %d: %s).",
-                                     errno, wxString::FromUTF8(std::strerror(errno)));
+        *outError = wxString::Format("Atomic file replacement failed (system error %d: %s).", errno,
+                                     wxString::FromUTF8(std::strerror(errno)));
     }
 #endif
     return false;
@@ -447,14 +446,14 @@ bool DbService::AcquirePathLock(const wxString& dbPath, bool exclusive, wxString
 
 #ifdef _WIN32
     const wchar_t* wideLockPath = lockPath.wc_str();
-    HANDLE handle = CreateFileW(wideLockPath.data(), GENERIC_READ | GENERIC_WRITE,
+    HANDLE handle = CreateFileW(wideLockPath, GENERIC_READ | GENERIC_WRITE,
                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                                 OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (handle == INVALID_HANDLE_VALUE) {
         if (outError) {
-            *outError = wxString::Format(
-                "Could not open database coordination lock (Windows error %lu).",
-                                         static_cast<unsigned long>(GetLastError()));
+            *outError =
+                wxString::Format("Could not open database coordination lock (Windows error %lu).",
+                                 static_cast<unsigned long>(GetLastError()));
         }
         return false;
     }
@@ -464,9 +463,9 @@ bool DbService::AcquirePathLock(const wxString& dbPath, bool exclusive, wxString
     const int fd = ::open(lockPathUtf8.data(), O_CREAT | O_RDWR, 0666);
     if (fd < 0) {
         if (outError) {
-            *outError = wxString::Format(
-                "Could not open database coordination lock (system error %d: %s).",
-                                         errno, wxString::FromUTF8(std::strerror(errno)));
+            *outError =
+                wxString::Format("Could not open database coordination lock (system error %d: %s).",
+                                 errno, wxString::FromUTF8(std::strerror(errno)));
         }
         return false;
     }
@@ -536,8 +535,8 @@ bool DbService::ChangePathLockMode(bool exclusive, wxString* outError) {
     }
 
     if (outError) {
-        *outError = targetError +
-                    "\nThe previous path lock could not be reacquired: " + previousError;
+        *outError =
+            targetError + "\nThe previous path lock could not be reacquired: " + previousError;
     }
     return false;
 }
@@ -696,7 +695,8 @@ bool DbService::CheckCompatibility(wxString* outError) const {
     const auto& required = GetRequiredSchema();
     std::set<std::string> existingTables;
 
-    auto tablesStatement = Prepare("SELECT name FROM sqlite_master WHERE type = 'table';", outError);
+    auto tablesStatement =
+        Prepare("SELECT name FROM sqlite_master WHERE type = 'table';", outError);
     if (!tablesStatement) {
         return false;
     }
@@ -754,9 +754,9 @@ bool DbService::CheckCompatibility(wxString* outError) const {
             actualColumns[name.ToStdString()] = column;
         }
         if (rc != SQLITE_DONE) {
-            return fail(wxString::Format("Compatibility check failed while reading columns for '%s': %s",
-                                         wxString::FromUTF8(tableName.c_str()),
-                                         GetLastErrorMessage()));
+            return fail(
+                wxString::Format("Compatibility check failed while reading columns for '%s': %s",
+                                 wxString::FromUTF8(tableName.c_str()), GetLastErrorMessage()));
         }
         columnStatement.reset();
 
@@ -774,23 +774,20 @@ bool DbService::CheckCompatibility(wxString* outError) const {
             if (found == actualColumns.end()) {
                 return fail(wxString::Format(
                     "Compatibility check failed: Table '%s' is missing column '%s'.",
-                    wxString::FromUTF8(tableName.c_str()),
-                    wxString::FromUTF8(specification.name)));
+                    wxString::FromUTF8(tableName.c_str()), wxString::FromUTF8(specification.name)));
             }
 
             const ActualColumn& actual = found->second;
             if (actual.type.CmpNoCase(wxString::FromUTF8(specification.type)) != 0) {
                 return fail(wxString::Format(
                     "Compatibility check failed: '%s.%s' must have type %s.",
-                    wxString::FromUTF8(tableName.c_str()),
-                    wxString::FromUTF8(specification.name),
+                    wxString::FromUTF8(tableName.c_str()), wxString::FromUTF8(specification.name),
                     wxString::FromUTF8(specification.type)));
             }
             if ((actual.notNull != 0) != specification.notNull) {
                 return fail(wxString::Format(
                     "Compatibility check failed: '%s.%s' has an incorrect NOT NULL definition.",
-                    wxString::FromUTF8(tableName.c_str()),
-                    wxString::FromUTF8(specification.name)));
+                    wxString::FromUTF8(tableName.c_str()), wxString::FromUTF8(specification.name)));
             }
             const bool expectedDefault = specification.defaultValue != nullptr;
             if (actual.hasDefault != expectedDefault ||
@@ -798,21 +795,19 @@ bool DbService::CheckCompatibility(wxString* outError) const {
                  actual.defaultValue.ToStdString() != specification.defaultValue)) {
                 return fail(wxString::Format(
                     "Compatibility check failed: '%s.%s' has an incorrect default value.",
-                    wxString::FromUTF8(tableName.c_str()),
-                    wxString::FromUTF8(specification.name)));
+                    wxString::FromUTF8(tableName.c_str()), wxString::FromUTF8(specification.name)));
             }
             if (actual.primaryKeyPosition != specification.primaryKeyPosition) {
                 return fail(wxString::Format(
                     "Compatibility check failed: '%s.%s' has an incorrect primary-key definition.",
-                    wxString::FromUTF8(tableName.c_str()),
-                    wxString::FromUTF8(specification.name)));
+                    wxString::FromUTF8(tableName.c_str()), wxString::FromUTF8(specification.name)));
             }
         }
 
         // PRAGMA table_info cannot report CHECK constraints or table-level UNIQUE
         // constraints, so also verify required invariants in the table's SQL.
-        auto sqlStatement = Prepare(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?;", outError);
+        auto sqlStatement =
+            Prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?;", outError);
         if (!sqlStatement) {
             return false;
         }
@@ -856,12 +851,12 @@ bool DbService::CheckCompatibility(wxString* outError) const {
 
         std::vector<std::string> actualKeySignatures;
         while ((rc = sqlite3_step(foreignKeyStatement->Get())) == SQLITE_ROW) {
-            actualKeySignatures.push_back(ForeignKeySignature(
-                foreignKeyStatement->GetText(3).ToStdString(),
-                foreignKeyStatement->GetText(2).ToStdString(),
-                foreignKeyStatement->GetText(4).ToStdString(),
-                foreignKeyStatement->GetText(5).ToStdString(),
-                foreignKeyStatement->GetText(6).ToStdString()));
+            actualKeySignatures.push_back(
+                ForeignKeySignature(foreignKeyStatement->GetText(3).ToStdString(),
+                                    foreignKeyStatement->GetText(2).ToStdString(),
+                                    foreignKeyStatement->GetText(4).ToStdString(),
+                                    foreignKeyStatement->GetText(5).ToStdString(),
+                                    foreignKeyStatement->GetText(6).ToStdString()));
         }
         if (rc != SQLITE_DONE) {
             return fail(wxString::Format(
@@ -1030,7 +1025,8 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
     destinationFile.Normalize(wxPATH_NORM_ABSOLUTE | wxPATH_NORM_DOTS);
     if (sourceFile.SameAs(destinationFile)) {
         if (outError) {
-            *outError = "The backup destination must be different from the currently open database.";
+            *outError =
+                "The backup destination must be different from the currently open database.";
         }
         return false;
     }
@@ -1096,8 +1092,8 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
         sqlite3_close_v2(destDb);
         wxRemoveFile(tempPath);
         if (outError) {
-            *outError = wxString("SQLite online backup did not complete successfully: ") +
-                        backupError;
+            *outError =
+                wxString("SQLite online backup did not complete successfully: ") + backupError;
         }
         return false;
     }
@@ -1133,8 +1129,8 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
         RemoveEphemeralPathLock(tempPath);
         wxRemoveFile(tempPath);
         if (outError) {
-            *outError = wxString("The backup copy failed its integrity check: ") +
-                        verificationError;
+            *outError =
+                wxString("The backup copy failed its integrity check: ") + verificationError;
         }
         return false;
     }
@@ -1144,8 +1140,8 @@ bool DbService::BackupTo(const wxString& destPath, wxString* outError) {
         RemoveEphemeralPathLock(tempPath);
         wxRemoveFile(tempPath);
         if (outError) {
-            *outError = wxString("The backup copy failed the database schema check: ") +
-                        verificationError;
+            *outError =
+                wxString("The backup copy failed the database schema check: ") + verificationError;
         }
         return false;
     }
@@ -1299,14 +1295,14 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
         wxString reopenError;
         if (Open(workingPath, &reopenError)) {
             if (outError) {
-                *outError = failure +
-                            "\n\nThe original database file was not replaced and the "
-                            "connection was reopened.";
+                *outError = failure + "\n\nThe original database file was not replaced and the "
+                                      "connection was reopened.";
             }
         } else if (outError) {
             *outError = failure +
                         "\n\nThe original database file was not replaced, but reopening it "
-                        "failed: " + reopenError;
+                        "failed: " +
+                        reopenError;
         }
         return false;
     };
@@ -1346,8 +1342,7 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
 
     wxString activationError;
     bool activated = Open(workingPath, &activationError);
-    if (activated &&
-        (!CheckIntegrity(&activationError) || !CheckCompatibility(&activationError))) {
+    if (activated && (!CheckIntegrity(&activationError) || !CheckCompatibility(&activationError))) {
         Close();
         activated = false;
     }
@@ -1367,9 +1362,10 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
         if (outError) {
             *outError = wxString("The backup snapshot was installed but the restored database "
                                  "could not be activated: ") +
-                        activationError + "\n\nThe previous database is preserved at: " +
-                        safetyPath + "\nCould not safely roll back because another process "
-                                     "holds the working database lock: " +
+                        activationError +
+                        "\n\nThe previous database is preserved at: " + safetyPath +
+                        "\nCould not safely roll back because another process "
+                        "holds the working database lock: " +
                         recoveryLockError;
         }
         return false;
@@ -1382,8 +1378,9 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
         ReleasePathLock();
         if (outError) {
             *outError = wxString("The restored database could not be activated: ") +
-                        activationError + "\n\nCould not stage the safety copy for recovery. "
-                                         "The safety copy remains at: " +
+                        activationError +
+                        "\n\nCould not stage the safety copy for recovery. "
+                        "The safety copy remains at: " +
                         safetyPath;
         }
         return false;
@@ -1420,16 +1417,17 @@ bool DbService::RestoreFrom(const wxString& backupPath, wxString* outError) {
         Close();
         if (outError) {
             *outError = wxString("The restored database could not be activated: ") +
-                        activationError + "\n\nThe previous database was copied back, but "
-                        "reopening or verification failed: " + reopenError +
-                        "\nThe safety copy remains at: " + safetyPath;
+                        activationError +
+                        "\n\nThe previous database was copied back, but "
+                        "reopening or verification failed: " +
+                        reopenError + "\nThe safety copy remains at: " + safetyPath;
         }
         return false;
     }
 
     if (outError) {
-        *outError = wxString("The restored database could not be activated: ") +
-                    activationError + "\n\nThe previous database was restored from the "
+        *outError = wxString("The restored database could not be activated: ") + activationError +
+                    "\n\nThe previous database was restored from the "
                     "verified safety copy.";
     }
     return false;

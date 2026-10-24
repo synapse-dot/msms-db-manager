@@ -55,9 +55,8 @@ inline int TwoDigitNumber(const wxString& value, std::size_t offset) {
 
 inline bool IsValidDate(const wxString& value) {
     const wxString date = Trimmed(value);
-    if (date.length() != 10 || date[4] != '-' || date[7] != '-' ||
-        !HasDigitsAt(date, 0, 4) || !HasDigitsAt(date, 5, 2) ||
-        !HasDigitsAt(date, 8, 2)) {
+    if (date.length() != 10 || date[4] != '-' || date[7] != '-' || !HasDigitsAt(date, 0, 4) ||
+        !HasDigitsAt(date, 5, 2) || !HasDigitsAt(date, 8, 2)) {
         return false;
     }
 
@@ -71,8 +70,7 @@ inline bool IsValidDate(const wxString& value) {
         return false;
     }
 
-    static constexpr int daysInMonth[] = {31, 28, 31, 30, 31, 30,
-                                           31, 31, 30, 31, 30, 31};
+    static constexpr int daysInMonth[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
     int maxDay = daysInMonth[month - 1];
     const bool leapYear = (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0));
     if (month == 2 && leapYear) {
@@ -83,8 +81,8 @@ inline bool IsValidDate(const wxString& value) {
 
 inline bool IsValidTime(const wxString& value) {
     const wxString time = Trimmed(value);
-    if (time.length() != 5 || time[2] != ':' ||
-        !HasDigitsAt(time, 0, 2) || !HasDigitsAt(time, 3, 2)) {
+    if (time.length() != 5 || time[2] != ':' || !HasDigitsAt(time, 0, 2) ||
+        !HasDigitsAt(time, 3, 2)) {
         return false;
     }
     const int hour = TwoDigitNumber(time, 0);
@@ -144,10 +142,8 @@ inline bool ValidateTimeRange(const wxString& startTime, const wxString& endTime
 
 // Project dates are optional. Each supplied date must be valid, and neither end
 // date may precede the start date.
-inline bool ValidateProjectDateRange(const wxString& startDate,
-                                     const wxString& targetEndDate,
-                                     const wxString& actualEndDate,
-                                     wxString* outError = nullptr) {
+inline bool ValidateProjectDateRange(const wxString& startDate, const wxString& targetEndDate,
+                                     const wxString& actualEndDate, wxString* outError = nullptr) {
     if (!ValidateDateField(startDate, "Start Date", false, outError) ||
         !ValidateDateField(targetEndDate, "Target End Date", false, outError) ||
         !ValidateDateField(actualEndDate, "Actual End Date", false, outError)) {
@@ -173,8 +169,7 @@ inline bool ValidateProjectDateRange(const wxString& startDate,
 }
 
 // Appointment start date is required; end date is optional.
-inline bool ValidateAppointmentDateRange(const wxString& startDate,
-                                         const wxString& endDate,
+inline bool ValidateAppointmentDateRange(const wxString& startDate, const wxString& endDate,
                                          wxString* outError = nullptr) {
     if (!ValidateDateField(startDate, "Start Date", true, outError) ||
         !ValidateDateField(endDate, "End Date", false, outError)) {
@@ -194,10 +189,10 @@ inline bool ValidateAppointmentDateRange(const wxString& startDate,
 // Returns nullopt on query error, true when a duplicate is found, and false
 // otherwise. Member-name duplicates are advisory, not a uniqueness constraint.
 // Matching ignores surrounding spaces and ASCII case.
-inline std::optional<bool> HasDuplicateMemberName(
-    const DbService& db, const wxString& name,
-    std::optional<std::int64_t> excludedMemberId = std::nullopt,
-    wxString* outError = nullptr) {
+inline std::optional<bool>
+HasDuplicateMemberName(const DbService& db, const wxString& name,
+                       std::optional<std::int64_t> excludedMemberId = std::nullopt,
+                       wxString* outError = nullptr) {
     if (!db.IsOpen()) {
         if (outError) {
             *outError = "Cannot check duplicate member names because the database is not open.";
@@ -208,11 +203,10 @@ inline std::optional<bool> HasDuplicateMemberName(
         return false;
     }
 
-    auto statement = db.Prepare(
-        "SELECT 1 FROM members "
-        "WHERE lower(trim(name)) = lower(trim(?)) "
-        "AND (? IS NULL OR member_id <> ?) LIMIT 1;",
-        outError);
+    auto statement = db.Prepare("SELECT 1 FROM members "
+                                "WHERE lower(trim(name)) = lower(trim(?)) "
+                                "AND (? IS NULL OR member_id <> ?) LIMIT 1;",
+                                outError);
     if (!statement) {
         return std::nullopt;
     }
@@ -222,11 +216,10 @@ inline std::optional<bool> HasDuplicateMemberName(
         }
         return std::nullopt;
     }
-    const bool exclusionBound =
-        excludedMemberId
-            ? (statement->BindInt64(2, *excludedMemberId) &&
-               statement->BindInt64(3, *excludedMemberId))
-            : (statement->BindNull(2) && statement->BindNull(3));
+    const bool exclusionBound = excludedMemberId
+                                    ? (statement->BindInt64(2, *excludedMemberId) &&
+                                       statement->BindInt64(3, *excludedMemberId))
+                                    : (statement->BindNull(2) && statement->BindNull(3));
     if (!exclusionBound) {
         if (outError) {
             *outError = "Could not bind the member ID for duplicate checking.";
@@ -251,10 +244,10 @@ inline std::optional<bool> HasDuplicateMemberName(
 
 // Returns nullopt on query error. This mirrors the database's UNIQUE(title, year)
 // constraint; the caller must still handle the constraint when saving to cover races.
-inline std::optional<bool> HasDuplicateCompetition(
-    const DbService& db, const wxString& title, int year,
-    std::optional<std::int64_t> excludedCompetitionId = std::nullopt,
-    wxString* outError = nullptr) {
+inline std::optional<bool>
+HasDuplicateCompetition(const DbService& db, const wxString& title, int year,
+                        std::optional<std::int64_t> excludedCompetitionId = std::nullopt,
+                        wxString* outError = nullptr) {
     if (!db.IsOpen()) {
         if (outError) {
             *outError = "Cannot check duplicate competitions because the database is not open.";
@@ -265,11 +258,10 @@ inline std::optional<bool> HasDuplicateCompetition(
         return false;
     }
 
-    auto statement = db.Prepare(
-        "SELECT 1 FROM external_competitions "
-        "WHERE title = ? AND year = ? "
-        "AND (? IS NULL OR competition_id <> ?) LIMIT 1;",
-        outError);
+    auto statement = db.Prepare("SELECT 1 FROM external_competitions "
+                                "WHERE title = ? AND year = ? "
+                                "AND (? IS NULL OR competition_id <> ?) LIMIT 1;",
+                                outError);
     if (!statement) {
         return std::nullopt;
     }
@@ -279,11 +271,10 @@ inline std::optional<bool> HasDuplicateCompetition(
         }
         return std::nullopt;
     }
-    const bool exclusionBound =
-        excludedCompetitionId
-            ? (statement->BindInt64(3, *excludedCompetitionId) &&
-               statement->BindInt64(4, *excludedCompetitionId))
-            : (statement->BindNull(3) && statement->BindNull(4));
+    const bool exclusionBound = excludedCompetitionId
+                                    ? (statement->BindInt64(3, *excludedCompetitionId) &&
+                                       statement->BindInt64(4, *excludedCompetitionId))
+                                    : (statement->BindNull(3) && statement->BindNull(4));
     if (!exclusionBound) {
         if (outError) {
             *outError = "Could not bind the competition ID for duplicate checking.";
@@ -317,18 +308,18 @@ inline wxString MemberDuplicateNameWarningMessage() {
 }
 
 inline wxString CompetitionDuplicateMessage() {
-    return "A competition with this title and year already exists. Choose a different title or year.";
+    return "A competition with this title and year already exists. Choose a different title or "
+           "year.";
 }
 
 // Query and show an advisory warning when the member name is already used.
 // The result remains true and the warning does not make the value invalid, so
 // callers may continue saving after the dialog is dismissed.
-inline std::optional<bool> CheckMemberNameAndWarn(
-    wxWindow* parent, const DbService& db, const wxString& name,
-    std::optional<std::int64_t> excludedMemberId = std::nullopt,
-    wxString* outError = nullptr) {
-    const auto duplicate =
-        HasDuplicateMemberName(db, name, excludedMemberId, outError);
+inline std::optional<bool>
+CheckMemberNameAndWarn(wxWindow* parent, const DbService& db, const wxString& name,
+                       std::optional<std::int64_t> excludedMemberId = std::nullopt,
+                       wxString* outError = nullptr) {
+    const auto duplicate = HasDuplicateMemberName(db, name, excludedMemberId, outError);
     if (duplicate && *duplicate) {
         wxMessageBox(MemberDuplicateNameWarningMessage() +
                          "\n\nNames are not required to be unique; you may continue saving.",

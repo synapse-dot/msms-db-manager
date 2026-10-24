@@ -1,7 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <wx/filefn.h>
 #include <wx/filename.h>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "db/DbService.h"
 #include "util/ErrorReporter.h"
@@ -29,8 +29,7 @@ struct TemporaryDatabase {
 
 } // namespace
 
-TEST_CASE("Date validation checks exact ISO format and real calendar dates",
-          "[validation][date]") {
+TEST_CASE("Date validation checks exact ISO format and real calendar dates", "[validation][date]") {
     using msms::validation::IsValidDate;
     using msms::validation::ValidateDateField;
 
@@ -139,8 +138,8 @@ TEST_CASE("Member-name duplicate check is advisory and ignores case and surround
         "INSERT INTO members (name, join_date) VALUES ('Ada Lovelace', '2026-01-01');", &error));
     const auto memberId = temporary.db.GetLastInsertRowId();
 
-    const auto duplicate = HasDuplicateMemberName(temporary.db, "  aDA LOVELACE  ",
-                                                   std::nullopt, &error);
+    const auto duplicate =
+        HasDuplicateMemberName(temporary.db, "  aDA LOVELACE  ", std::nullopt, &error);
     REQUIRE(duplicate.has_value());
     REQUIRE(*duplicate);
 
@@ -156,7 +155,8 @@ TEST_CASE("Member-name duplicate check is advisory and ignores case and surround
     const auto blankName = HasDuplicateMemberName(temporary.db, "   ", std::nullopt, &error);
     REQUIRE(blankName.has_value());
     REQUIRE_FALSE(*blankName);
-    REQUIRE(msms::validation::MemberDuplicateNameWarningMessage().Contains("not have to be unique"));
+    REQUIRE(
+        msms::validation::MemberDuplicateNameWarningMessage().Contains("not have to be unique"));
 }
 
 TEST_CASE("Competition duplicate check mirrors UNIQUE title/year and can exclude the edited row",
@@ -176,8 +176,8 @@ TEST_CASE("Competition duplicate check mirrors UNIQUE title/year and can exclude
     REQUIRE(duplicate.has_value());
     REQUIRE(*duplicate);
 
-    const auto excludingSelf = HasDuplicateCompetition(
-        temporary.db, "Modelling Challenge", 2026, competitionId, &error);
+    const auto excludingSelf =
+        HasDuplicateCompetition(temporary.db, "Modelling Challenge", 2026, competitionId, &error);
     REQUIRE(excludingSelf.has_value());
     REQUIRE_FALSE(*excludingSelf);
 

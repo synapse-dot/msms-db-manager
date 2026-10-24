@@ -19,8 +19,8 @@ void TablePage::BuildControls() {
     auto* root = new wxBoxSizer(wxVERTICAL);
     auto* controls = new wxBoxSizer(wxHORIZONTAL);
 
-    m_search = new wxSearchCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition,
-                                wxSize(260, -1), wxTE_PROCESS_ENTER);
+    m_search = new wxSearchCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(260, -1),
+                                wxTE_PROCESS_ENTER);
     m_search->SetDescriptiveText("Search…");
     controls->Add(m_search, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
 
@@ -110,7 +110,7 @@ void TablePage::ApplyFilters() {
         }
 
         const long itemIndex = m_table->InsertItem(m_table->GetItemCount(),
-                                                    row.cells.empty() ? wxString{} : row.cells[0]);
+                                                   row.cells.empty() ? wxString{} : row.cells[0]);
         for (std::size_t column = 1; column < m_options.columns.size(); ++column) {
             const wxString value = column < row.cells.size() ? row.cells[column] : wxString{};
             m_table->SetItem(itemIndex, static_cast<int>(column), value);
@@ -141,8 +141,7 @@ void TablePage::OnNew(wxCommandEvent& /*event*/) {
 }
 
 void TablePage::OnEdit(wxCommandEvent& /*event*/) {
-    const long selected =
-        m_table->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
+    const long selected = m_table->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
     if (selected == -1 || static_cast<std::size_t>(selected) >= m_visibleRows.size()) {
         return;
     }

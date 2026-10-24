@@ -62,12 +62,13 @@ wxString DatabaseError(const DbService& db, const wxString& context) {
 
 template <typename Binder>
 std::unique_ptr<Statement> LoadSingleRow(DbService& db, const wxString& sql, Binder binder,
-                                         const wxString& missingMessage,
-                                         const wxString& context, wxString* outError) {
+                                         const wxString& missingMessage, const wxString& context,
+                                         wxString* outError) {
     wxString prepareError;
     auto statement = db.Prepare(sql, &prepareError);
     if (!statement) {
-        Fail(outError, wxString::Format("Database query failed while %s:\n%s", context, prepareError));
+        Fail(outError,
+             wxString::Format("Database query failed while %s:\n%s", context, prepareError));
         return nullptr;
     }
 
@@ -89,18 +90,17 @@ std::unique_ptr<Statement> LoadSingleRow(DbService& db, const wxString& sql, Bin
 }
 
 template <typename Binder>
-bool ExecuteWrite(DbService& db, const wxString& sql, Binder binder,
-                  const wxString& context, wxString* outError) {
+bool ExecuteWrite(DbService& db, const wxString& sql, Binder binder, const wxString& context,
+                  wxString* outError) {
     wxString prepareError;
     auto statement = db.Prepare(sql, &prepareError);
     if (!statement) {
-        return Fail(outError, wxString::Format("Could not prepare the database write:\n%s",
-                                               prepareError));
+        return Fail(outError,
+                    wxString::Format("Could not prepare the database write:\n%s", prepareError));
     }
 
     if (!binder(*statement)) {
-        return Fail(outError, wxString::Format("Could not bind values while %s.",
-                                               context));
+        return Fail(outError, wxString::Format("Could not bind values while %s.", context));
     }
 
     const int rc = sqlite3_step(statement->Get());
@@ -161,11 +161,10 @@ bool SplitAppointmentKey(const wxString& key, wxString* startDate, wxString* off
 }
 
 bool LoadActivityTypes(DbService& db, wxArrayString* types, wxString* outError) {
-    auto statement = db.Prepare(
-        "SELECT DISTINCT type FROM activities "
-        "WHERE type IS NOT NULL AND trim(type) <> '' "
-        "ORDER BY type COLLATE NOCASE ASC;",
-        outError);
+    auto statement = db.Prepare("SELECT DISTINCT type FROM activities "
+                                "WHERE type IS NOT NULL AND trim(type) <> '' "
+                                "ORDER BY type COLLATE NOCASE ASC;",
+                                outError);
     if (!statement) {
         return false;
     }
@@ -190,8 +189,7 @@ bool LoadActivityTypes(DbService& db, wxArrayString* types, wxString* outError) 
 // ---------------------------------------------------------------------------
 
 MemberForm::MemberForm(wxWindow* parent, DbService& db, RecordFormMode mode,
-                       std::optional<std::int64_t> recordId,
-                       std::function<void()> onReturnToParent)
+                       std::optional<std::int64_t> recordId, std::function<void()> onReturnToParent)
     : RecordForm(parent, MakeOptions("Member", "members", mode, db, recordId, {},
                                      std::move(onReturnToParent))),
       m_db(db), m_id(recordId) {
@@ -248,8 +246,8 @@ bool MemberForm::ValidateFields(wxString* outError) const {
     }
 
     // Duplicate names are deliberately advisory; they never block a save.
-    (void)validation::CheckMemberNameAndWarn(
-        const_cast<MemberForm*>(this), m_db, Value(m_name), m_id, nullptr);
+    (void)validation::CheckMemberNameAndWarn(const_cast<MemberForm*>(this), m_db, Value(m_name),
+                                             m_id, nullptr);
     return true;
 }
 
@@ -267,12 +265,9 @@ bool MemberForm::SaveRecord(wxString* outError) {
             "UPDATE members SET name = ?, class = ?, phone = ?, email = ?, status = ?, "
             "join_date = ? WHERE member_id = ?;",
             [&](Statement& value) {
-                return value.BindText(1, name) &&
-                       BindOptionalText(value, 2, className) &&
-                       BindOptionalText(value, 3, phone) &&
-                       BindOptionalText(value, 4, email) &&
-                       value.BindText(5, status) &&
-                       value.BindText(6, joinDate) &&
+                return value.BindText(1, name) && BindOptionalText(value, 2, className) &&
+                       BindOptionalText(value, 3, phone) && BindOptionalText(value, 4, email) &&
+                       value.BindText(5, status) && value.BindText(6, joinDate) &&
                        value.BindInt64(7, *m_id);
             },
             "saving the member", outError);
@@ -283,12 +278,9 @@ bool MemberForm::SaveRecord(wxString* outError) {
         "INSERT INTO members (name, class, phone, email, status, join_date) "
         "VALUES (?, ?, ?, ?, ?, ?);",
         [&](Statement& value) {
-            return value.BindText(1, name) &&
-                   BindOptionalText(value, 2, className) &&
-                   BindOptionalText(value, 3, phone) &&
-                   BindOptionalText(value, 4, email) &&
-                   value.BindText(5, status) &&
-                   value.BindText(6, joinDate);
+            return value.BindText(1, name) && BindOptionalText(value, 2, className) &&
+                   BindOptionalText(value, 3, phone) && BindOptionalText(value, 4, email) &&
+                   value.BindText(5, status) && value.BindText(6, joinDate);
         },
         "saving the member", outError);
 }
@@ -297,9 +289,10 @@ bool MemberForm::DeleteRecord(wxString* outError) {
     if (!ValidateLoaded(m_recordLoaded, m_loadError, outError)) {
         return false;
     }
-    return ExecuteWrite(m_db, "DELETE FROM members WHERE member_id = ?;",
-                        [this](Statement& value) { return value.BindInt64(1, *m_id); },
-                        "deleting the member", outError);
+    return ExecuteWrite(
+        m_db, "DELETE FROM members WHERE member_id = ?;",
+        [this](Statement& value) { return value.BindInt64(1, *m_id); }, "deleting the member",
+        outError);
 }
 
 // ---------------------------------------------------------------------------
@@ -382,11 +375,9 @@ bool MeetingForm::SaveRecord(wxString* outError) {
             "end_time = ?, location = ? WHERE meeting_id = ?;",
             [&](Statement& value) {
                 return value.BindText(1, title) && value.BindText(2, type) &&
-                       BindOptionalText(value, 3, date) &&
-                       BindOptionalText(value, 4, startTime) &&
+                       BindOptionalText(value, 3, date) && BindOptionalText(value, 4, startTime) &&
                        BindOptionalText(value, 5, endTime) &&
-                       BindOptionalText(value, 6, location) &&
-                       value.BindInt64(7, *m_id);
+                       BindOptionalText(value, 6, location) && value.BindInt64(7, *m_id);
             },
             "saving the meeting", outError);
     }
@@ -397,10 +388,8 @@ bool MeetingForm::SaveRecord(wxString* outError) {
         "VALUES (?, ?, ?, ?, ?, ?);",
         [&](Statement& value) {
             return value.BindText(1, title) && value.BindText(2, type) &&
-                   BindOptionalText(value, 3, date) &&
-                   BindOptionalText(value, 4, startTime) &&
-                   BindOptionalText(value, 5, endTime) &&
-                   BindOptionalText(value, 6, location);
+                   BindOptionalText(value, 3, date) && BindOptionalText(value, 4, startTime) &&
+                   BindOptionalText(value, 5, endTime) && BindOptionalText(value, 6, location);
         },
         "saving the meeting", outError);
 }
@@ -409,9 +398,10 @@ bool MeetingForm::DeleteRecord(wxString* outError) {
     if (!ValidateLoaded(m_recordLoaded, m_loadError, outError)) {
         return false;
     }
-    return ExecuteWrite(m_db, "DELETE FROM meetings WHERE meeting_id = ?;",
-                        [this](Statement& value) { return value.BindInt64(1, *m_id); },
-                        "deleting the meeting", outError);
+    return ExecuteWrite(
+        m_db, "DELETE FROM meetings WHERE meeting_id = ?;",
+        [this](Statement& value) { return value.BindInt64(1, *m_id); }, "deleting the meeting",
+        outError);
 }
 
 // ---------------------------------------------------------------------------
@@ -425,8 +415,8 @@ ProjectForm::ProjectForm(wxWindow* parent, DbService& db, RecordFormMode mode,
                                      std::move(onReturnToParent))),
       m_db(db), m_id(recordId) {
     m_title = AddTextField("Title *");
-    m_status = AddChoiceField("Status *",
-                              Choices({"Planned", "Ongoing", "Completed", "Cancelled"}), 0);
+    m_status =
+        AddChoiceField("Status *", Choices({"Planned", "Ongoing", "Completed", "Cancelled"}), 0);
     m_startDate = AddTextField("Start Date");
     m_startDate->SetHint("YYYY-MM-DD");
     m_targetEndDate = AddTextField("Target End Date");
@@ -473,12 +463,14 @@ bool ProjectForm::ValidateFields(wxString* outError) const {
         !validation::ValidateRequiredField(Value(m_title), "Title", outError) ||
         !ValidateChoice(m_status, "Status", outError) ||
         !validation::ValidateDateField(Value(m_startDate), "Start Date", false, outError) ||
-        !validation::ValidateDateField(Value(m_targetEndDate), "Target End Date", false, outError) ||
-        !validation::ValidateDateField(Value(m_actualEndDate), "Actual End Date", false, outError)) {
+        !validation::ValidateDateField(Value(m_targetEndDate), "Target End Date", false,
+                                       outError) ||
+        !validation::ValidateDateField(Value(m_actualEndDate), "Actual End Date", false,
+                                       outError)) {
         return false;
     }
-    return validation::ValidateProjectDateRange(
-        Value(m_startDate), Value(m_targetEndDate), Value(m_actualEndDate), outError);
+    return validation::ValidateProjectDateRange(Value(m_startDate), Value(m_targetEndDate),
+                                                Value(m_actualEndDate), outError);
 }
 
 bool ProjectForm::SaveRecord(wxString* outError) {
@@ -497,8 +489,7 @@ bool ProjectForm::SaveRecord(wxString* outError) {
                 return value.BindText(1, title) && value.BindText(2, status) &&
                        BindOptionalText(value, 3, startDate) &&
                        BindOptionalText(value, 4, targetEndDate) &&
-                       BindOptionalText(value, 5, actualEndDate) &&
-                       value.BindInt64(6, *m_id);
+                       BindOptionalText(value, 5, actualEndDate) && value.BindInt64(6, *m_id);
             },
             "saving the project", outError);
     }
@@ -520,9 +511,10 @@ bool ProjectForm::DeleteRecord(wxString* outError) {
     if (!ValidateLoaded(m_recordLoaded, m_loadError, outError)) {
         return false;
     }
-    return ExecuteWrite(m_db, "DELETE FROM projects WHERE project_id = ?;",
-                        [this](Statement& value) { return value.BindInt64(1, *m_id); },
-                        "deleting the project", outError);
+    return ExecuteWrite(
+        m_db, "DELETE FROM projects WHERE project_id = ?;",
+        [this](Statement& value) { return value.BindInt64(1, *m_id); }, "deleting the project",
+        outError);
 }
 
 // ---------------------------------------------------------------------------
@@ -602,11 +594,10 @@ bool AppointmentForm::LoadRecord(wxString* outError) {
 
 bool AppointmentForm::PopulateMemberChoices(std::optional<std::int64_t> assignedMemberId,
                                             wxArrayString* labels, wxString* outError) {
-    auto statement = m_db.Prepare(
-        "SELECT member_id, name, class, status FROM members "
-        "WHERE status = 'Active' OR member_id = ? "
-        "ORDER BY name COLLATE NOCASE ASC, member_id ASC;",
-        outError);
+    auto statement = m_db.Prepare("SELECT member_id, name, class, status FROM members "
+                                  "WHERE status = 'Active' OR member_id = ? "
+                                  "ORDER BY name COLLATE NOCASE ASC, member_id ASC;",
+                                  outError);
     if (!statement) {
         return false;
     }
@@ -696,8 +687,7 @@ bool AppointmentForm::DeleteRecord(wxString* outError) {
         return false;
     }
     return ExecuteWrite(
-        m_db,
-        "DELETE FROM committee_appointments WHERE start_date = ? AND office = ?;",
+        m_db, "DELETE FROM committee_appointments WHERE start_date = ? AND office = ?;",
         [this](Statement& value) {
             return value.BindText(1, m_startDateKey) && value.BindText(2, m_officeKey);
         },
@@ -772,7 +762,7 @@ bool ActivityForm::ValidateFields(wxString* outError) const {
     return ValidateLoaded(m_recordLoaded, m_loadError, outError) &&
            validation::ValidateRequiredField(Value(m_title), "Title", outError) &&
            validation::ValidateRequiredField(validation::Trimmed(m_type->GetValue()), "Type",
-                                              outError) &&
+                                             outError) &&
            validation::ValidateDateField(Value(m_date), "Date", false, outError) &&
            validation::ValidateTimeField(Value(m_startTime), "Start Time", false, outError) &&
            validation::ValidateTimeField(Value(m_endTime), "End Time", false, outError) &&
@@ -794,11 +784,9 @@ bool ActivityForm::SaveRecord(wxString* outError) {
             "end_time = ?, location = ? WHERE activity_id = ?;",
             [&](Statement& value) {
                 return value.BindText(1, title) && value.BindText(2, type) &&
-                       BindOptionalText(value, 3, date) &&
-                       BindOptionalText(value, 4, startTime) &&
+                       BindOptionalText(value, 3, date) && BindOptionalText(value, 4, startTime) &&
                        BindOptionalText(value, 5, endTime) &&
-                       BindOptionalText(value, 6, location) &&
-                       value.BindInt64(7, *m_id);
+                       BindOptionalText(value, 6, location) && value.BindInt64(7, *m_id);
             },
             "saving the activity", outError);
     }
@@ -809,10 +797,8 @@ bool ActivityForm::SaveRecord(wxString* outError) {
         "VALUES (?, ?, ?, ?, ?, ?);",
         [&](Statement& value) {
             return value.BindText(1, title) && value.BindText(2, type) &&
-                   BindOptionalText(value, 3, date) &&
-                   BindOptionalText(value, 4, startTime) &&
-                   BindOptionalText(value, 5, endTime) &&
-                   BindOptionalText(value, 6, location);
+                   BindOptionalText(value, 3, date) && BindOptionalText(value, 4, startTime) &&
+                   BindOptionalText(value, 5, endTime) && BindOptionalText(value, 6, location);
         },
         "saving the activity", outError);
 }
@@ -821,9 +807,10 @@ bool ActivityForm::DeleteRecord(wxString* outError) {
     if (!ValidateLoaded(m_recordLoaded, m_loadError, outError)) {
         return false;
     }
-    return ExecuteWrite(m_db, "DELETE FROM activities WHERE activity_id = ?;",
-                        [this](Statement& value) { return value.BindInt64(1, *m_id); },
-                        "deleting the activity", outError);
+    return ExecuteWrite(
+        m_db, "DELETE FROM activities WHERE activity_id = ?;",
+        [this](Statement& value) { return value.BindInt64(1, *m_id); }, "deleting the activity",
+        outError);
 }
 
 // ---------------------------------------------------------------------------
@@ -856,8 +843,7 @@ CompetitionForm::CompetitionForm(wxWindow* parent, DbService& db, RecordFormMode
 
 bool CompetitionForm::LoadRecord(wxString* outError) {
     auto statement = LoadSingleRow(
-        m_db,
-        "SELECT title, year FROM external_competitions WHERE competition_id = ?;",
+        m_db, "SELECT title, year FROM external_competitions WHERE competition_id = ?;",
         [this](Statement& value) { return value.BindInt64(1, *m_id); },
         "This competition no longer exists. Return to All Competitions and refresh the table.",
         "loading the competition", outError);
@@ -896,8 +882,7 @@ bool CompetitionForm::SaveRecord(wxString* outError) {
 
     if (IsEditMode()) {
         return ExecuteWrite(
-            m_db,
-            "UPDATE external_competitions SET title = ?, year = ? WHERE competition_id = ?;",
+            m_db, "UPDATE external_competitions SET title = ?, year = ? WHERE competition_id = ?;",
             [&](Statement& value) {
                 return value.BindText(1, title) && value.BindInt(2, year) &&
                        value.BindInt64(3, *m_id);
@@ -906,8 +891,7 @@ bool CompetitionForm::SaveRecord(wxString* outError) {
     }
 
     return ExecuteWrite(
-        m_db,
-        "INSERT INTO external_competitions (title, year) VALUES (?, ?);",
+        m_db, "INSERT INTO external_competitions (title, year) VALUES (?, ?);",
         [&](Statement& value) { return value.BindText(1, title) && value.BindInt(2, year); },
         "saving the competition", outError);
 }
@@ -918,8 +902,8 @@ bool CompetitionForm::DeleteRecord(wxString* outError) {
     }
     return ExecuteWrite(
         m_db, "DELETE FROM external_competitions WHERE competition_id = ?;",
-        [this](Statement& value) { return value.BindInt64(1, *m_id); },
-        "deleting the competition", outError);
+        [this](Statement& value) { return value.BindInt64(1, *m_id); }, "deleting the competition",
+        outError);
 }
 
 } // namespace msms

@@ -1,8 +1,8 @@
 #ifndef MSMS_FILE_IDENTITY_H
 #define MSMS_FILE_IDENTITY_H
 
-#include <cstdint>
 #include <cerrno>
+#include <cstdint>
 
 #include <wx/string.h>
 
@@ -36,28 +36,24 @@ struct FileIdentity {
         return !exists || (device == other.device && fileIndex == other.fileIndex);
     }
 
-    bool operator!=(const FileIdentity& other) const noexcept {
-        return !(*this == other);
-    }
+    bool operator!=(const FileIdentity& other) const noexcept { return !(*this == other); }
 };
 
 inline FileIdentity CaptureFileIdentity(const wxString& path) {
     FileIdentity identity;
 #ifdef _WIN32
     const wchar_t* widePath = path.wc_str();
-    HANDLE handle = ::CreateFileW(
-        widePath.data(), FILE_READ_ATTRIBUTES,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE handle = ::CreateFileW(widePath, FILE_READ_ATTRIBUTES,
+                                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                  OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (handle != INVALID_HANDLE_VALUE) {
         BY_HANDLE_FILE_INFORMATION info{};
         if (::GetFileInformationByHandle(handle, &info)) {
             identity.valid = true;
             identity.exists = true;
             identity.device = static_cast<std::uint64_t>(info.dwVolumeSerialNumber);
-            identity.fileIndex =
-                (static_cast<std::uint64_t>(info.nFileIndexHigh) << 32) |
-                static_cast<std::uint64_t>(info.nFileIndexLow);
+            identity.fileIndex = (static_cast<std::uint64_t>(info.nFileIndexHigh) << 32) |
+                                 static_cast<std::uint64_t>(info.nFileIndexLow);
         }
         ::CloseHandle(handle);
         return identity;
@@ -72,7 +68,7 @@ inline FileIdentity CaptureFileIdentity(const wxString& path) {
     if (!utf8Path.data()) {
         return identity;
     }
-    struct stat info {};
+    struct stat info{};
     if (::stat(utf8Path.data(), &info) == 0) {
         identity.valid = true;
         identity.exists = true;

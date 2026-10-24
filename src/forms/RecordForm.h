@@ -23,10 +23,7 @@
 
 namespace msms {
 
-enum class RecordFormMode {
-    Create,
-    Edit
-};
+enum class RecordFormMode { Create, Edit };
 
 struct RecordFormOptions {
     wxString title;
@@ -89,13 +86,7 @@ protected:
     virtual bool DeleteRecord(wxString* outError) = 0;
 
 private:
-    enum class TrackedKind {
-        Text,
-        Choice,
-        Combo,
-        Date,
-        Time
-    };
+    enum class TrackedKind { Text, Choice, Combo, Date, Time };
 
     struct TrackedField {
         wxWindow* control{nullptr};

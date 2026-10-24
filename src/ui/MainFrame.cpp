@@ -8,8 +8,8 @@
 #include <utility>
 #include <vector>
 
-#include <wx/accel.h>
 #include <wx/aboutdlg.h>
+#include <wx/accel.h>
 #include <wx/button.h>
 #include <wx/dialog.h>
 #include <wx/fileconf.h>
@@ -42,12 +42,7 @@ enum MenuItemId {
     ID_RESTORE_BACKUP
 };
 
-enum class NavigationPageType {
-    Table,
-    ScopedTable,
-    Form,
-    RelationshipForm
-};
+enum class NavigationPageType { Table, ScopedTable, Form, RelationshipForm };
 
 class NavigationItemData final : public wxTreeItemData {
 public:
@@ -90,8 +85,9 @@ public:
                 recordDescription = "Start Date: " + recordDescription.Left(separator) +
                                     ", Office: " + recordDescription.Mid(separator + 1);
             }
-            modeText = "Edit mode — selected record key: " + recordDescription +
-                       ". Editable record fields will be provided by the feature-specific form view.";
+            modeText =
+                "Edit mode — selected record key: " + recordDescription +
+                ". Editable record fields will be provided by the feature-specific form view.";
         }
 
         auto* mode = new wxStaticText(this, wxID_ANY, modeText);
@@ -217,9 +213,9 @@ MainFrame::MainFrame(DbService& dbService)
     m_navigationPanel->SetMinSize(wxSize(230, -1));
     auto* navigationSizer = new wxBoxSizer(wxVERTICAL);
 
-    m_navigationTree = new wxTreeCtrl(
-        m_navigationPanel, wxID_ANY, wxDefaultPosition, wxDefaultSize,
-        wxTR_HAS_BUTTONS | wxTR_LINES_AT_ROOT | wxTR_SINGLE | wxTR_HIDE_ROOT);
+    m_navigationTree =
+        new wxTreeCtrl(m_navigationPanel, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+                       wxTR_HAS_BUTTONS | wxTR_LINES_AT_ROOT | wxTR_SINGLE | wxTR_HIDE_ROOT);
     navigationSizer->Add(m_navigationTree, 1, wxEXPAND | wxALL, 4);
     m_navigationPanel->SetSizer(navigationSizer);
 
@@ -237,8 +233,8 @@ MainFrame::MainFrame(DbService& dbService)
 
     BuildMenuBar();
     Bind(wxEVT_CLOSE_WINDOW, &MainFrame::OnClose, this);
-    m_navigationTree->Bind(wxEVT_TREE_SEL_CHANGING,
-                           &MainFrame::OnNavigationSelectionChanging, this);
+    m_navigationTree->Bind(wxEVT_TREE_SEL_CHANGING, &MainFrame::OnNavigationSelectionChanging,
+                           this);
 
     BuildNavigationTree();
     UpdateTitle();
@@ -278,18 +274,16 @@ void MainFrame::BuildNavigationTree() {
     const wxTreeItemId root = m_navigationTree->AddRoot("Navigation");
 
     const auto addCategory = [this, root](const wxString& title) {
-        return m_navigationTree->AppendItem(
-            root, title, -1, -1, new NavigationItemData(title));
+        return m_navigationTree->AppendItem(root, title, -1, -1, new NavigationItemData(title));
     };
     const auto addPage = [this](const wxTreeItemId& parent, const wxString& title,
                                 NavigationPageType pageType) {
-        return m_navigationTree->AppendItem(
-            parent, title, -1, -1, new NavigationItemData(title, pageType));
+        return m_navigationTree->AppendItem(parent, title, -1, -1,
+                                            new NavigationItemData(title, pageType));
     };
 
     const wxTreeItemId members = addCategory("Members");
-    const wxTreeItemId allMembers =
-        addPage(members, "All Members", NavigationPageType::Table);
+    const wxTreeItemId allMembers = addPage(members, "All Members", NavigationPageType::Table);
     addPage(members, "New / Edit Member", NavigationPageType::Form);
 
     const wxTreeItemId meetings = addCategory("Meetings");
@@ -366,9 +360,8 @@ bool MainFrame::NavigateToNavigationItem(const wxTreeItemId& item) {
     }
 
     const auto pageType = data->PageType();
-    const bool formPage =
-        pageType && (*pageType == NavigationPageType::Form ||
-                     *pageType == NavigationPageType::RelationshipForm);
+    const bool formPage = pageType && (*pageType == NavigationPageType::Form ||
+                                       *pageType == NavigationPageType::RelationshipForm);
     std::optional<wxString> recordKey;
     if (m_pendingFormOpen && m_pendingFormTitle == data->PageTitle()) {
         recordKey = m_pendingFormRecordKey;
@@ -399,9 +392,9 @@ bool MainFrame::ConfirmLeaveActiveForm() {
     wxDialog dialog(this, wxID_ANY, "Unsaved Changes", wxDefaultPosition, wxDefaultSize,
                     wxDEFAULT_DIALOG_STYLE);
     auto* layout = new wxBoxSizer(wxVERTICAL);
-    auto* message = new wxStaticText(
-        &dialog, wxID_ANY,
-        "This form has unsaved changes. Save before continuing, discard the changes, or cancel this action.");
+    auto* message = new wxStaticText(&dialog, wxID_ANY,
+                                     "This form has unsaved changes. Save before continuing, "
+                                     "discard the changes, or cancel this action.");
     message->Wrap(420);
     layout->Add(message, 0, wxALL, 14);
 
@@ -454,8 +447,8 @@ bool MainFrame::ConfirmLeaveActiveForm() {
     return false;
 }
 
-wxWindow* MainFrame::CreateNavigationPage(
-    const wxString& pageTitle, bool formPage, const std::optional<wxString>& recordKey) {
+wxWindow* MainFrame::CreateNavigationPage(const wxString& pageTitle, bool formPage,
+                                          const std::optional<wxString>& recordKey) {
     if (formPage) {
         const bool recordForm =
             pageTitle == "New / Edit Member" || pageTitle == "New / Edit Meeting" ||
@@ -469,8 +462,7 @@ wxWindow* MainFrame::CreateNavigationPage(
                 return nullptr;
             }
 
-            const RecordFormMode mode =
-                recordKey ? RecordFormMode::Edit : RecordFormMode::Create;
+            const RecordFormMode mode = recordKey ? RecordFormMode::Edit : RecordFormMode::Create;
             const auto returnToParent = [this, pageTitle]() {
                 wxString parentTitle;
                 if (pageTitle == "New / Edit Member") {
@@ -520,10 +512,9 @@ wxWindow* MainFrame::CreateNavigationPage(
             return new CompetitionForm(m_workspacePanel, m_dbService, mode, id, returnToParent);
         }
 
-        const bool relationshipForm =
-            pageTitle == "Attendance Register" ||
-            pageTitle == "New / Edit Project Members" ||
-            pageTitle == "New / Edit Competition Team Assignments";
+        const bool relationshipForm = pageTitle == "Attendance Register" ||
+                                      pageTitle == "New / Edit Project Members" ||
+                                      pageTitle == "New / Edit Competition Team Assignments";
         if (relationshipForm) {
             if (!m_dbService.IsOpen()) {
                 ShowDatabaseError(this, "Database Error",
@@ -603,24 +594,24 @@ wxWindow* MainFrame::CreateRecordTablePage(const wxString& pageTitle) {
 
     if (pageTitle == "All Members") {
         formTitle = "New / Edit Member";
-        options.columns = {{"Name", 180}, {"Class", 80}, {"Phone", 130},
+        options.columns = {{"Name", 180},  {"Class", 80},  {"Phone", 130},
                            {"Email", 220}, {"Status", 90}, {"Join Date", 110}};
         options.filterOptions = {{"Active", "Active"}, {"Former", "Former"}};
-        options.rows = loadRows(
-            "SELECT member_id, name, class, phone, email, status, join_date "
-            "FROM members ORDER BY name COLLATE NOCASE ASC, member_id ASC;",
-            [](Statement& statement) {
-                TableRow row;
-                row.id = statement.GetInt64(0);
-                row.cells = {statement.GetText(1), statement.GetText(2), statement.GetText(3),
-                             statement.GetText(4), statement.GetText(5), statement.GetText(6)};
-                row.filterValue = statement.GetText(5);
-                return row;
-            });
+        options.rows = loadRows("SELECT member_id, name, class, phone, email, status, join_date "
+                                "FROM members ORDER BY name COLLATE NOCASE ASC, member_id ASC;",
+                                [](Statement& statement) {
+                                    TableRow row;
+                                    row.id = statement.GetInt64(0);
+                                    row.cells = {statement.GetText(1), statement.GetText(2),
+                                                 statement.GetText(3), statement.GetText(4),
+                                                 statement.GetText(5), statement.GetText(6)};
+                                    row.filterValue = statement.GetText(5);
+                                    return row;
+                                });
     } else if (pageTitle == "All Meetings") {
         formTitle = "New / Edit Meeting";
         options.columns = {{"Title", 180}, {"Type", 70}, {"Date", 110},
-                           {"Start", 80}, {"End", 80}, {"Location", 160}};
+                           {"Start", 80},  {"End", 80},  {"Location", 160}};
         options.filterOptions = {{"AGM", "AGM"}, {"EGM", "EGM"}, {"ECM", "ECM"}};
         options.rows = loadRows(
             "SELECT meeting_id, title, type, meeting_date, start_time, end_time, location "
@@ -637,10 +628,15 @@ wxWindow* MainFrame::CreateRecordTablePage(const wxString& pageTitle) {
             });
     } else if (pageTitle == "All Projects") {
         formTitle = "New / Edit Project";
-        options.columns = {{"Title", 200}, {"Status", 100}, {"Start", 110},
-                           {"Target End", 110}, {"Actual End", 110}};
-        options.filterOptions = {{"Planned", "Planned"}, {"Ongoing", "Ongoing"},
-                                 {"Completed", "Completed"}, {"Cancelled", "Cancelled"}};
+        options.columns = {{"Title", 200},
+                           {"Status", 100},
+                           {"Start", 110},
+                           {"Target End", 110},
+                           {"Actual End", 110}};
+        options.filterOptions = {{"Planned", "Planned"},
+                                 {"Ongoing", "Ongoing"},
+                                 {"Completed", "Completed"},
+                                 {"Cancelled", "Cancelled"}};
         options.rows = loadRows(
             "SELECT project_id, title, status, start_date, target_end_date, actual_end_date "
             "FROM projects ORDER BY title COLLATE NOCASE ASC, project_id ASC;",
@@ -654,17 +650,15 @@ wxWindow* MainFrame::CreateRecordTablePage(const wxString& pageTitle) {
             });
     } else if (pageTitle == "All Appointments" || pageTitle == "Current Committee") {
         formTitle = "New / Edit Appointment";
-        options.columns = {{"Office", 180}, {"Member", 180},
-                           {"Start Date", 110}, {"End Date", 110}};
-        wxString sql =
-            "SELECT ca.start_date, ca.office, ca.end_date, m.name "
-            "FROM committee_appointments AS ca "
-            "JOIN members AS m ON m.member_id = ca.member_id ";
+        options.columns = {
+            {"Office", 180}, {"Member", 180}, {"Start Date", 110}, {"End Date", 110}};
+        wxString sql = "SELECT ca.start_date, ca.office, ca.end_date, m.name "
+                       "FROM committee_appointments AS ca "
+                       "JOIN members AS m ON m.member_id = ca.member_id ";
         if (pageTitle == "Current Committee") {
-            sql +=
-                "WHERE start_date <= date('now', 'localtime') "
-                "AND (end_date IS NULL OR end_date >= date('now', 'localtime')) "
-                "ORDER BY office COLLATE NOCASE ASC, start_date DESC;";
+            sql += "WHERE start_date <= date('now', 'localtime') "
+                   "AND (end_date IS NULL OR end_date >= date('now', 'localtime')) "
+                   "ORDER BY office COLLATE NOCASE ASC, start_date DESC;";
         } else {
             sql += "ORDER BY ca.start_date DESC, ca.office COLLATE NOCASE ASC;";
         }
@@ -681,15 +675,14 @@ wxWindow* MainFrame::CreateRecordTablePage(const wxString& pageTitle) {
     } else if (pageTitle == "All Activities") {
         formTitle = "New / Edit Activity";
         options.columns = {{"Title", 180}, {"Type", 100}, {"Date", 110},
-                           {"Start", 80}, {"End", 80}, {"Location", 160}};
+                           {"Start", 80},  {"End", 80},   {"Location", 160}};
         options.showFilter = true;
         if (m_dbService.IsOpen()) {
             wxString error;
-            auto typeStatement = m_dbService.Prepare(
-                "SELECT DISTINCT type FROM activities "
-                "WHERE type IS NOT NULL AND trim(type) <> '' "
-                "ORDER BY type COLLATE NOCASE ASC;",
-                &error);
+            auto typeStatement = m_dbService.Prepare("SELECT DISTINCT type FROM activities "
+                                                     "WHERE type IS NOT NULL AND trim(type) <> '' "
+                                                     "ORDER BY type COLLATE NOCASE ASC;",
+                                                     &error);
             if (!typeStatement) {
                 ShowDatabaseError(this, "Database Query Error",
                                   wxString("Could not load activity types:\n\n") + error);
@@ -716,15 +709,14 @@ wxWindow* MainFrame::CreateRecordTablePage(const wxString& pageTitle) {
     } else if (pageTitle == "All Competitions") {
         formTitle = "New / Edit Competitions";
         options.columns = {{"Title", 240}, {"Year", 80}};
-        options.rows = loadRows(
-            "SELECT competition_id, title, year FROM external_competitions "
-            "ORDER BY title COLLATE NOCASE ASC, year ASC;",
-            [](Statement& statement) {
-                TableRow row;
-                row.id = statement.GetInt64(0);
-                row.cells = {statement.GetText(1), statement.GetText(2)};
-                return row;
-            });
+        options.rows = loadRows("SELECT competition_id, title, year FROM external_competitions "
+                                "ORDER BY title COLLATE NOCASE ASC, year ASC;",
+                                [](Statement& statement) {
+                                    TableRow row;
+                                    row.id = statement.GetInt64(0);
+                                    row.cells = {statement.GetText(1), statement.GetText(2)};
+                                    return row;
+                                });
     } else {
         return nullptr;
     }
@@ -732,9 +724,7 @@ wxWindow* MainFrame::CreateRecordTablePage(const wxString& pageTitle) {
     // Defer workspace replacement until the button event has returned; this
     // page owns the button handler and will be destroyed by the navigation.
     options.onNew = [this, formTitle]() {
-        CallAfter([this, formTitle]() {
-            (void)OpenFormFromTable(formTitle, std::nullopt);
-        });
+        CallAfter([this, formTitle]() { (void)OpenFormFromTable(formTitle, std::nullopt); });
     };
     options.onEdit = [this, formTitle](long long id) {
         CallAfter([this, formTitle, id]() {
@@ -742,9 +732,7 @@ wxWindow* MainFrame::CreateRecordTablePage(const wxString& pageTitle) {
         });
     };
     options.onEditKey = [this, formTitle](const wxString& key) {
-        CallAfter([this, formTitle, key]() {
-            (void)OpenFormFromTable(formTitle, key);
-        });
+        CallAfter([this, formTitle, key]() { (void)OpenFormFromTable(formTitle, key); });
     };
 
     return new TablePage(m_workspacePanel, std::move(options));
@@ -797,70 +785,64 @@ wxWindow* MainFrame::CreateScopedTablePage(const wxString& pageTitle) {
 
     if (pageTitle == "Attendees") {
         opts.title = "Meeting";
-        opts.emptyMessage =
-            "No meetings yet \xe2\x80\x94 create one to see attendees.";
+        opts.emptyMessage = "No meetings yet \xe2\x80\x94 create one to see attendees.";
         opts.columns = {{"Member ID", 80}, {"Name", 180}, {"Phone", 130}, {"Email", 220}};
-        opts.parents = loadParents(
-            "SELECT meeting_id, title, meeting_date FROM meetings "
-            "ORDER BY CASE WHEN meeting_date IS NULL OR trim(meeting_date) = '' "
-            "THEN 1 ELSE 0 END ASC, meeting_date DESC, meeting_id ASC;",
-            [](Statement& s) {
-                ScopedParent p;
-                p.id = s.GetInt64(0);
-                const wxString date = s.GetText(2);
-                p.label = s.GetText(1);
-                if (!date.IsEmpty()) {
-                    p.label += wxString::FromUTF8(" \xe2\x80\x94 ") + date;
-                }
-                return p;
-            });
-        opts.rowLoader = makeRowLoader(
-            "SELECT m.member_id, m.name, m.phone, m.email "
-            "FROM meeting_attendance AS ma "
-            "JOIN members AS m ON m.member_id = ma.member_id "
-            "WHERE ma.meeting_id = ? "
-            "ORDER BY m.name COLLATE NOCASE ASC;");
+        opts.parents =
+            loadParents("SELECT meeting_id, title, meeting_date FROM meetings "
+                        "ORDER BY CASE WHEN meeting_date IS NULL OR trim(meeting_date) = '' "
+                        "THEN 1 ELSE 0 END ASC, meeting_date DESC, meeting_id ASC;",
+                        [](Statement& s) {
+                            ScopedParent p;
+                            p.id = s.GetInt64(0);
+                            const wxString date = s.GetText(2);
+                            p.label = s.GetText(1);
+                            if (!date.IsEmpty()) {
+                                p.label += wxString::FromUTF8(" \xe2\x80\x94 ") + date;
+                            }
+                            return p;
+                        });
+        opts.rowLoader = makeRowLoader("SELECT m.member_id, m.name, m.phone, m.email "
+                                       "FROM meeting_attendance AS ma "
+                                       "JOIN members AS m ON m.member_id = ma.member_id "
+                                       "WHERE ma.meeting_id = ? "
+                                       "ORDER BY m.name COLLATE NOCASE ASC;");
     } else if (pageTitle == "Project Teams") {
         opts.title = "Project";
-        opts.emptyMessage =
-            "No projects yet \xe2\x80\x94 create one to see project teams.";
+        opts.emptyMessage = "No projects yet \xe2\x80\x94 create one to see project teams.";
         opts.columns = {
             {"Member ID", 80}, {"Name", 180}, {"Phone", 130}, {"Email", 220}, {"Role", 100}};
-        opts.parents = loadParents(
-            "SELECT project_id, title FROM projects "
-            "ORDER BY title COLLATE NOCASE ASC, project_id ASC;",
-            [](Statement& s) {
-                ScopedParent p;
-                p.id = s.GetInt64(0);
-                p.label = s.GetText(1);
-                return p;
-            });
-        opts.rowLoader = makeRowLoader(
-            "SELECT m.member_id, m.name, m.phone, m.email, pm.role "
-            "FROM project_members AS pm "
-            "JOIN members AS m ON m.member_id = pm.member_id "
-            "WHERE pm.project_id = ? "
-            "ORDER BY m.name COLLATE NOCASE ASC;");
+        opts.parents = loadParents("SELECT project_id, title FROM projects "
+                                   "ORDER BY title COLLATE NOCASE ASC, project_id ASC;",
+                                   [](Statement& s) {
+                                       ScopedParent p;
+                                       p.id = s.GetInt64(0);
+                                       p.label = s.GetText(1);
+                                       return p;
+                                   });
+        opts.rowLoader = makeRowLoader("SELECT m.member_id, m.name, m.phone, m.email, pm.role "
+                                       "FROM project_members AS pm "
+                                       "JOIN members AS m ON m.member_id = pm.member_id "
+                                       "WHERE pm.project_id = ? "
+                                       "ORDER BY m.name COLLATE NOCASE ASC;");
     } else if (pageTitle == "Competition Teams") {
         opts.title = "Competition";
-        opts.emptyMessage =
-            "No competitions yet \xe2\x80\x94 create one to see competition teams.";
+        opts.emptyMessage = "No competitions yet \xe2\x80\x94 create one to see competition teams.";
         opts.columns = {{"Member ID", 80}, {"Name", 180}, {"Role", 140}};
-        opts.parents = loadParents(
-            "SELECT competition_id, title, year FROM external_competitions "
-            "ORDER BY title COLLATE NOCASE ASC, year ASC;",
-            [](Statement& s) {
-                ScopedParent p;
-                p.id = s.GetInt64(0);
-                p.label = s.GetText(1) + wxString::FromUTF8(" \xe2\x80\x94 ") + s.GetText(2);
-                return p;
-            });
-        opts.rowLoader = makeRowLoader(
-            "SELECT m.member_id, m.name, cp.role "
-            "FROM competition_participants AS cp "
-            "JOIN members AS m ON m.member_id = cp.member_id "
-            "WHERE cp.competition_id = ? "
-            "ORDER BY m.name COLLATE NOCASE ASC;");
+        opts.parents =
+            loadParents("SELECT competition_id, title, year FROM external_competitions "
+                        "ORDER BY title COLLATE NOCASE ASC, year ASC;",
+                        [](Statement& s) {
+                            ScopedParent p;
+                            p.id = s.GetInt64(0);
+                            p.label =
+                                s.GetText(1) + wxString::FromUTF8(" \xe2\x80\x94 ") + s.GetText(2);
+                            return p;
+                        });
+        opts.rowLoader = makeRowLoader("SELECT m.member_id, m.name, cp.role "
+                                       "FROM competition_participants AS cp "
+                                       "JOIN members AS m ON m.member_id = cp.member_id "
+                                       "WHERE cp.competition_id = ? "
+                                       "ORDER BY m.name COLLATE NOCASE ASC;");
     } else {
         return nullptr;
     }
@@ -868,16 +850,16 @@ wxWindow* MainFrame::CreateScopedTablePage(const wxString& pageTitle) {
     return new ScopedPage(m_workspacePanel, std::move(opts));
 }
 
-bool MainFrame::OpenFormFromTable(
-    const wxString& formTitle, const std::optional<wxString>& recordKey) {
+bool MainFrame::OpenFormFromTable(const wxString& formTitle,
+                                  const std::optional<wxString>& recordKey) {
     const auto root = m_navigationTree->GetRootItem();
     std::function<wxTreeItemId(const wxTreeItemId&)> findPage =
         [this, &findPage, &formTitle](const wxTreeItemId& parent) -> wxTreeItemId {
         wxTreeItemIdValue cookie;
-        for (wxTreeItemId child = m_navigationTree->GetFirstChild(parent, cookie);
-             child.IsOk(); child = m_navigationTree->GetNextChild(parent, cookie)) {
-            const auto* data = dynamic_cast<const NavigationItemData*>(
-                m_navigationTree->GetItemData(child));
+        for (wxTreeItemId child = m_navigationTree->GetFirstChild(parent, cookie); child.IsOk();
+             child = m_navigationTree->GetNextChild(parent, cookie)) {
+            const auto* data =
+                dynamic_cast<const NavigationItemData*>(m_navigationTree->GetItemData(child));
             if (data && data->IsPage() && data->PageTitle() == formTitle) {
                 return child;
             }
@@ -1033,8 +1015,9 @@ void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
         destination.GetPathWithSep() + "." + destination.GetFullName() + ".tmp.";
     const wxString tempPath = wxFileName::CreateTempFileName(tempPrefix);
     if (tempPath.IsEmpty()) {
-        ShowDatabaseError(this, "Database Creation Error",
-                          "Could not create a temporary database file in the destination directory.");
+        ShowDatabaseError(
+            this, "Database Creation Error",
+            "Could not create a temporary database file in the destination directory.");
         return;
     }
 
@@ -1056,8 +1039,7 @@ void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
     wxRemoveFile(DatabasePathLockFile(tempPath));
 
     const wxString previousPath = m_dbService.GetDbPath();
-    const bool replacingOpenDatabase =
-        m_dbService.IsOpen() && SameFilePath(previousPath, path);
+    const bool replacingOpenDatabase = m_dbService.IsOpen() && SameFilePath(previousPath, path);
     if (replacingOpenDatabase) {
         m_dbService.Close();
     }
@@ -1072,7 +1054,8 @@ void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
             if (!ReopenDatabase(previousPath, &reopenError)) {
                 ShowDatabaseError(this, "Database Reopen Error",
                                   wxString("The create operation was cancelled, but the previous "
-                                           "database could not be reopened:\n\n") + reopenError);
+                                           "database could not be reopened:\n\n") +
+                                      reopenError);
             }
         }
         return;
@@ -1090,9 +1073,10 @@ void MainFrame::OnCreateNewDatabase(wxCommandEvent& /*event*/) {
                                       reopenError);
             }
         }
-        ShowDatabaseError(this, "Database Creation Error",
-                          "The initialised database could not be moved to the selected location. "
-                          "The existing file has not been intentionally deleted by this operation.");
+        ShowDatabaseError(
+            this, "Database Creation Error",
+            "The initialised database could not be moved to the selected location. "
+            "The existing file has not been intentionally deleted by this operation.");
         return;
     }
 
@@ -1220,8 +1204,8 @@ void MainFrame::OnRestoreBackup(wxCommandEvent& /*event*/) {
                 !m_dbService.CheckIntegrity(&reopenError)) {
                 m_dbService.Close();
                 UpdateTitle();
-                error = restoreError + "\n\nCould not reopen a verified working database: " +
-                        reopenError;
+                error = restoreError +
+                        "\n\nCould not reopen a verified working database: " + reopenError;
             } else {
                 error = restoreError;
             }
@@ -1238,8 +1222,8 @@ void MainFrame::OnRestoreBackup(wxCommandEvent& /*event*/) {
     // ReturnToTablePage can be a no-op when All Members was already selected;
     // force a refresh in that case too.
     RefreshActiveTablePage();
-    wxMessageBox("Database restored successfully.", "Restore Complete",
-                 wxOK | wxICON_INFORMATION, this);
+    wxMessageBox("Database restored successfully.", "Restore Complete", wxOK | wxICON_INFORMATION,
+                 this);
 }
 
 void MainFrame::OnExit(wxCommandEvent& /*event*/) {
@@ -1991,8 +1975,8 @@ void MainFrame::RefreshActiveTablePage() {
         return;
     }
 
-    const auto* data =
-        dynamic_cast<const NavigationItemData*>(m_navigationTree->GetItemData(m_activeNavigationItem));
+    const auto* data = dynamic_cast<const NavigationItemData*>(
+        m_navigationTree->GetItemData(m_activeNavigationItem));
     if (!data || !data->IsPage()) {
         return;
     }
@@ -2016,12 +2000,12 @@ void MainFrame::ReturnToTablePage(const wxString& pageTitle) {
     std::function<wxTreeItemId(const wxTreeItemId&)> findTable =
         [this, &findTable, &pageTitle](const wxTreeItemId& parent) -> wxTreeItemId {
         wxTreeItemIdValue cookie;
-        for (wxTreeItemId child = m_navigationTree->GetFirstChild(parent, cookie);
-             child.IsOk(); child = m_navigationTree->GetNextChild(parent, cookie)) {
-            const auto* data = dynamic_cast<const NavigationItemData*>(
-                m_navigationTree->GetItemData(child));
-            if (data && data->IsPage() && data->PageTitle() == pageTitle &&
-                data->PageType() && *data->PageType() == NavigationPageType::Table) {
+        for (wxTreeItemId child = m_navigationTree->GetFirstChild(parent, cookie); child.IsOk();
+             child = m_navigationTree->GetNextChild(parent, cookie)) {
+            const auto* data =
+                dynamic_cast<const NavigationItemData*>(m_navigationTree->GetItemData(child));
+            if (data && data->IsPage() && data->PageTitle() == pageTitle && data->PageType() &&
+                *data->PageType() == NavigationPageType::Table) {
                 return child;
             }
             const wxTreeItemId nested = findTable(child);

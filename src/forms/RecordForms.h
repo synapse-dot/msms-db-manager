@@ -103,8 +103,8 @@ protected:
 
 private:
     bool LoadRecord(wxString* outError);
-    bool PopulateMemberChoices(std::optional<std::int64_t> assignedMemberId,
-                               wxArrayString* labels, wxString* outError);
+    bool PopulateMemberChoices(std::optional<std::int64_t> assignedMemberId, wxArrayString* labels,
+                               wxString* outError);
 
     DbService& m_db;
     wxString m_startDateKey;
