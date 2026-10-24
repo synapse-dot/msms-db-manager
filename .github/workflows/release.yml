@@ -64,6 +64,9 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force out | Out-Null
           Copy-Item build\release-windows-static\Release\msms.exe out\msms-manager.exe
+          $binaryBytes = (Get-Item out\msms-manager.exe).Length
+          Write-Output "Release executable size: $binaryBytes bytes"
+          if ($binaryBytes -ge 15000000) { throw "Release executable exceeds the 15,000,000-byte size target." }
           makensis "/DAPP_VERSION=$env:APP_VERSION" /DOUTPUT_DIR=out /DAPP_BINARY=out\msms-manager.exe /DLICENSE_FILE=LICENSE packaging\windows\installer.nsi
           $installer = "out\MSMSManager-$env:APP_VERSION-win64.exe"
           if (-not (Test-Path $installer)) { throw "NSIS did not create $installer" }
