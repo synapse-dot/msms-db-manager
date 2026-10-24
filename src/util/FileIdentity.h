@@ -1,8 +1,8 @@
 #ifndef MSMS_FILE_IDENTITY_H
 #define MSMS_FILE_IDENTITY_H
 
-#include <cstdint>
 #include <cerrno>
+#include <cstdint>
 
 #include <wx/string.h>
 
@@ -46,7 +46,7 @@ inline FileIdentity CaptureFileIdentity(const wxString& path) {
 #ifdef _WIN32
     const wchar_t* widePath = path.wc_str();
     HANDLE handle = ::CreateFileW(
-        widePath.data(), FILE_READ_ATTRIBUTES,
+        widePath, FILE_READ_ATTRIBUTES,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (handle != INVALID_HANDLE_VALUE) {
