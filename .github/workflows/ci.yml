@@ -36,7 +36,7 @@ jobs:
         if: matrix.platform == 'windows'
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}\vcpkg\archives
+          path: ${{ runner.temp }}/vcpkg-binary-cache
           key: vcpkg-windows-x64-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}
           restore-keys: |
             vcpkg-windows-x64-
