@@ -28,20 +28,10 @@ jobs:
         shell: pwsh
         run: |
           $tag = $env:GITHUB_REF_NAME
-          if ($tag -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
-            throw "Release tags must use vMAJOR.MINOR.PATCH without leading zeroes, e.g. v1.2.3."
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Release tags must use vMAJOR.MINOR.PATCH, e.g. v1.2.3."
           }
           $version = $tag.Substring(1)
-
-          # PE version resources use four 16-bit components; the installer
-          # expands MAJOR.MINOR.PATCH to MAJOR.MINOR.PATCH.0.
-          foreach ($component in $version.Split('.')) {
-            $number = 0
-            if (-not [int]::TryParse($component, [ref]$number) -or $number -gt 65535) {
-              throw "Each version component must be between 0 and 65535 for NSIS version resources (got '$component')."
-            }
-          }
-
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install NSIS

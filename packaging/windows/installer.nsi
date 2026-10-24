@@ -1,6 +1,5 @@
 Unicode true
 !include "MUI2.nsh"
-!include "x64.nsh"
 
 !ifndef APP_VERSION
 !define APP_VERSION "1.0.0"
@@ -22,20 +21,16 @@ Name "${PRODUCT_NAME}"
 Caption "${PRODUCT_NAME} Setup"
 OutFile "${OUTPUT_DIR}\MSMSManager-${APP_VERSION}-win64.exe"
 InstallDir "$PROGRAMFILES64\MSMS Manager"
+InstallDirRegKey HKLM "${UNINSTALL_REG_KEY}" "InstallLocation"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 ShowInstDetails show
 ShowUnInstDetails show
 
 VIProductVersion "${APP_VERSION}.0"
-VIFileVersion "${APP_VERSION}.0"
-; LANGID 1033 is English (United States). Use a numeric ID so version-resource
-; language metadata does not depend on when MUI_LANGUAGE defines LANG_ENGLISH.
-VIAddVersionKey /LANG=1033 "ProductName" "${PRODUCT_NAME}"
-VIAddVersionKey /LANG=1033 "ProductVersion" "${APP_VERSION}"
-VIAddVersionKey /LANG=1033 "FileVersion" "${APP_VERSION}.0"
-VIAddVersionKey /LANG=1033 "CompanyName" "MSMS"
-VIAddVersionKey /LANG=1033 "FileDescription" "${PRODUCT_NAME} installer"
+VIAddVersionKey "ProductName" "${PRODUCT_NAME}"
+VIAddVersionKey "ProductVersion" "${APP_VERSION}"
+VIAddVersionKey "FileDescription" "${PRODUCT_NAME} installer"
 
 !define MUI_ABORTWARNING
 !define MUI_UNABORTWARNING
@@ -48,37 +43,8 @@ VIAddVersionKey /LANG=1033 "FileDescription" "${PRODUCT_NAME} installer"
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 
-Function .onInit
-  ${IfNot} ${RunningX64}
-    MessageBox MB_OK|MB_ICONSTOP "MSMS Manager requires 64-bit Windows."
-    Abort
-  ${EndIf}
-
-  ; Current builds register in the 64-bit view. Fall back to the 32-bit view
-  ; to preserve custom install paths written by earlier installer versions.
-  SetRegView 64
-  ReadRegStr $0 HKLM "${UNINSTALL_REG_KEY}" "InstallLocation"
-  ${If} $0 == ""
-    SetRegView 32
-    ReadRegStr $0 HKLM "${UNINSTALL_REG_KEY}" "InstallLocation"
-    SetRegView 64
-  ${EndIf}
-  ${If} $0 != ""
-    StrCpy $INSTDIR $0
-  ${EndIf}
-FunctionEnd
-
-Function un.onInit
-  ${IfNot} ${RunningX64}
-    MessageBox MB_OK|MB_ICONSTOP "The MSMS Manager uninstaller requires 64-bit Windows."
-    Abort
-  ${EndIf}
-  SetRegView 64
-FunctionEnd
-
 Section "MSMS Manager" SEC_MAIN
   SectionIn RO
-  SetRegView 64
   SetShellVarContext all
   SetOutPath "$INSTDIR"
 
@@ -98,15 +64,9 @@ Section "MSMS Manager" SEC_MAIN
   WriteRegStr HKLM "${UNINSTALL_REG_KEY}" "UninstallString" "$\"$INSTDIR\Uninstall.exe$\""
   WriteRegDWORD HKLM "${UNINSTALL_REG_KEY}" "NoModify" 1
   WriteRegDWORD HKLM "${UNINSTALL_REG_KEY}" "NoRepair" 1
-
-  ; Remove the legacy 32-bit-view entry left by earlier installer versions.
-  SetRegView 32
-  DeleteRegKey HKLM "${UNINSTALL_REG_KEY}"
-  SetRegView 64
 SectionEnd
 
 Section "Uninstall"
-  SetRegView 64
   SetShellVarContext all
   Delete "$SMPROGRAMS\MSMS Manager\MSMS Manager.lnk"
   RMDir "$SMPROGRAMS\MSMS Manager"
