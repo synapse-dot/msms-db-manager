@@ -178,6 +178,7 @@ jobs:
 
       - name: Install quality tools
         run: |
+          # Keep the formatter aligned with .pre-commit-config.yaml (clang-format 19.1.1).
           sudo apt-get update
           # Assumes ubuntu-latest provides wxWidgets 3.2 development headers.
           sudo apt-get install --yes clang-format-19 clang-tidy cmake ninja-build ccache \
