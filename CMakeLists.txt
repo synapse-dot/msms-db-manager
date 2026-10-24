@@ -132,7 +132,7 @@ endif()
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
     file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS "src/*.cpp" "src/*.h")
-    add_executable(msms ${APP_SOURCES})
+    add_executable(msms WIN32 ${APP_SOURCES})
     target_include_directories(msms PRIVATE src)
     target_link_libraries(msms PRIVATE wxWidgets::Core wxWidgets::Base wxWidgets::Adv)
     if(TARGET sqlite3_lib)
