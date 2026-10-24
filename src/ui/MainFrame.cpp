@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <wx/accel.h>
+#include <wx/aboutdlg.h>
 #include <wx/button.h>
 #include <wx/dialog.h>
 #include <wx/fileconf.h>
@@ -1256,48 +1257,14 @@ void MainFrame::OnClose(wxCloseEvent& event) {
 }
 
 void MainFrame::OnAbout(wxCommandEvent& /*event*/) {
-    wxDialog dialog(this, wxID_ANY, "About MSMS Manager", wxDefaultPosition, wxDefaultSize,
-                    wxDEFAULT_DIALOG_STYLE);
-    auto* rootSizer = new wxBoxSizer(wxVERTICAL);
+    wxAboutDialogInfo info;
+    info.SetName("MSMS Manager");
+    info.SetVersion(kApplicationVersion);
+    info.SetLicence("GPL-3.0-or-later");
+    info.SetDescription(
+        "Offline desktop application for managing MSMS membership and society records.");
 
-    auto* title = new wxStaticText(&dialog, wxID_ANY, "MSMS Manager");
-    wxFont titleFont = title->GetFont();
-    titleFont.SetPointSize(titleFont.GetPointSize() + 3);
-    titleFont.SetWeight(wxFONTWEIGHT_BOLD);
-    title->SetFont(titleFont);
-
-    auto* version = new wxStaticText(
-        &dialog, wxID_ANY, wxString("Version ") + kApplicationVersion);
-    auto* purpose = new wxStaticText(
-        &dialog, wxID_ANY,
-        "An offline desktop application for managing MSMS membership and society records.");
-    purpose->Wrap(440);
-
-    auto* licenceHeading = new wxStaticText(&dialog, wxID_ANY, "Licence");
-    wxFont licenceFont = licenceHeading->GetFont();
-    licenceFont.SetWeight(wxFONTWEIGHT_BOLD);
-    licenceHeading->SetFont(licenceFont);
-
-    auto* licence = new wxStaticText(
-        &dialog, wxID_ANY,
-        "GNU General Public License v3.0 or later (GPL-3.0-or-later).\n"
-        "The full licence text is distributed with this application in the LICENSE file.");
-    licence->Wrap(440);
-
-    rootSizer->Add(title, 0, wxALL, 12);
-    rootSizer->Add(version, 0, wxLEFT | wxRIGHT | wxBOTTOM, 12);
-    rootSizer->Add(purpose, 0, wxLEFT | wxRIGHT | wxBOTTOM, 12);
-    rootSizer->Add(licenceHeading, 0, wxLEFT | wxRIGHT | wxBOTTOM, 12);
-    rootSizer->Add(licence, 0, wxLEFT | wxRIGHT | wxBOTTOM, 12);
-
-    auto* okButton = new wxButton(&dialog, wxID_OK, "OK");
-    okButton->SetDefault();
-    rootSizer->Add(okButton, 0, wxALIGN_RIGHT | wxLEFT | wxRIGHT | wxBOTTOM, 12);
-
-    dialog.SetSizerAndFit(rootSizer);
-    dialog.SetMinSize(wxSize(480, dialog.GetSize().GetHeight()));
-    dialog.CentreOnParent();
-    dialog.ShowModal();
+    wxAboutBox(info, this);
 }
 
 void MainFrame::RememberDatabasePath(const wxString& path) {
