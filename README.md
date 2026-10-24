@@ -4,6 +4,8 @@
 
 The application operates entirely offline on a user-selected SQLite database file per the society schema. There is no cloud synchronization, network dependency, or proprietary licensing.
 
+MSMS Manager coordinates active database connections between application instances with a small sibling lock file named `.<database-filename>.msms.lock`. The operating system releases the lock when an instance closes or exits, but the lock file itself may remain. Do not manually delete it while MSMS Manager is running.
+
 ---
 
 ## Key Principles & Features

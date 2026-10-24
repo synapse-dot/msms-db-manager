@@ -1,3 +1,6 @@
+#include <filesystem>
+#include <system_error>
+
 #include <wx/dir.h>
 #include <wx/file.h>
 #include <wx/filefn.h>
@@ -339,6 +342,9 @@ TEST_CASE(
     wxString workingDbPath = wxFileName::CreateTempFileName("msms_working_restore_");
     wxString validBackupPath = wxFileName::CreateTempFileName("msms_valid_bak_");
     wxString corruptedBackupPath = wxFileName::CreateTempFileName("msms_corrupted_bak_");
+    wxString incompatibleBackupPath = wxFileName::CreateTempFileName("msms_incompatible_bak_");
+    wxString missingConstraintBackupPath =
+        wxFileName::CreateTempFileName("msms_missing_constraint_bak_");
 
     if (wxFileExists(workingDbPath))
         wxRemoveFile(workingDbPath);
@@ -346,6 +352,10 @@ TEST_CASE(
         wxRemoveFile(validBackupPath);
     if (wxFileExists(corruptedBackupPath))
         wxRemoveFile(corruptedBackupPath);
+    if (wxFileExists(incompatibleBackupPath))
+        wxRemoveFile(incompatibleBackupPath);
+    if (wxFileExists(missingConstraintBackupPath))
+        wxRemoveFile(missingConstraintBackupPath);
 
     msms::DbService db;
     wxString error;
@@ -356,11 +366,42 @@ TEST_CASE(
     REQUIRE(db.Execute(seedSql, &error));
     REQUIRE(db.BackupTo(validBackupPath, &error));
 
-    // Create a corrupted backup candidate file
+    // Create a corrupted backup candidate file.
     {
         wxFile badFile(corruptedBackupPath, wxFile::write);
         badFile.Write("THIS IS NOT A VALID SQLITE DATABASE FILE HEADER!!");
         badFile.Close();
+    }
+
+    // Keep the required activities table and column names, but give a key the
+    // wrong declared type. Compatibility validation must reject definitions,
+    // not merely check that names happen to exist.
+    {
+        sqlite3* rawDb = nullptr;
+        REQUIRE(sqlite3_open_v2(incompatibleBackupPath.ToUTF8().data(), &rawDb,
+                                SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
+        REQUIRE(sqlite3_exec(
+                    rawDb,
+                    "CREATE TABLE activities (activity_id TEXT PRIMARY KEY, title TEXT NOT NULL, "
+                    "type TEXT NOT NULL, activity_date TEXT, start_time TEXT, end_time TEXT, "
+                    "location TEXT);",
+                    nullptr, nullptr, nullptr) == SQLITE_OK);
+        REQUIRE(sqlite3_close_v2(rawDb) == SQLITE_OK);
+    }
+
+    // The columns have the correct types but the required time-order CHECK
+    // constraint is missing, which should also make the database incompatible.
+    {
+        sqlite3* rawDb = nullptr;
+        REQUIRE(sqlite3_open_v2(missingConstraintBackupPath.ToUTF8().data(), &rawDb,
+                                SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
+        REQUIRE(sqlite3_exec(
+                    rawDb,
+                    "CREATE TABLE activities (activity_id INTEGER PRIMARY KEY, title TEXT NOT NULL, "
+                    "type TEXT NOT NULL, activity_date TEXT, start_time TEXT, end_time TEXT, "
+                    "location TEXT);",
+                    nullptr, nullptr, nullptr) == SQLITE_OK);
+        REQUIRE(sqlite3_close_v2(rawDb) == SQLITE_OK);
     }
 
     SECTION("Rollback behavior on corrupted input file preserves working database") {
@@ -374,9 +415,106 @@ TEST_CASE(
         REQUIRE(db.CheckIntegrity(&error));
         REQUIRE(db.CheckCompatibility(&error));
 
-        // Temporary restore file must not be left behind
-        wxString tempPath = workingDbPath + ".tmp_restore";
-        CHECK_FALSE(wxFileExists(tempPath));
+        // No staging files should be left behind after the rejected candidate.
+        wxFileName workFn(workingDbPath);
+        workFn.Normalize(wxPATH_NORM_ABSOLUTE);
+        wxDir workDir(workFn.GetPath());
+        wxString matchedFile;
+        const wxString restoreTempPattern = "." + workFn.GetFullName() + ".restore.tmp.*";
+        CHECK_FALSE(workDir.GetFirst(&matchedFile, restoreTempPattern, wxDIR_FILES));
+    }
+
+    SECTION("Restoring from a hard-link alias of the active database is rejected") {
+        const wxString hardLinkPath = workingDbPath + ".hardlink";
+        std::error_code linkError;
+        std::filesystem::create_hard_link(
+            std::filesystem::path(workingDbPath.ToStdString()),
+            std::filesystem::path(hardLinkPath.ToStdString()), linkError);
+
+        if (linkError) {
+            WARN("Hard-link test skipped because the filesystem refused link creation: "
+                 << linkError.message());
+        } else {
+            CHECK_FALSE(db.RestoreFrom(hardLinkPath, &error));
+            CHECK(error.Contains("alias"));
+            CHECK(GetRowCount(db, "members") == 10);
+            CHECK(db.CheckIntegrity(&error));
+            std::filesystem::remove(std::filesystem::path(hardLinkPath.ToStdString()), linkError);
+        }
+    }
+
+    SECTION("Restoring from the active database is rejected without changes") {
+        CHECK_FALSE(db.RestoreFrom(workingDbPath, &error));
+        CHECK(error.Contains("currently open database"));
+        REQUIRE(db.IsOpen());
+        CHECK(GetRowCount(db, "members") == 10);
+        REQUIRE(db.CheckIntegrity(&error));
+        REQUIRE(db.CheckCompatibility(&error));
+    }
+
+    SECTION("A candidate with wrong column definitions is rejected before safety copy") {
+        CHECK_FALSE(db.RestoreFrom(incompatibleBackupPath, &error));
+        CHECK(error.Contains("must have type INTEGER"));
+        REQUIRE(db.IsOpen());
+        CHECK(GetRowCount(db, "members") == 10);
+
+        wxFileName workFn(workingDbPath);
+        workFn.Normalize(wxPATH_NORM_ABSOLUTE);
+        wxDir workDir(workFn.GetPath());
+        wxString matchedFile;
+        const wxString safetyPattern = workFn.GetFullName() + ".backup.*";
+        CHECK_FALSE(workDir.GetFirst(&matchedFile, safetyPattern, wxDIR_FILES));
+    }
+
+    SECTION("A candidate missing a required CHECK constraint is rejected before safety copy") {
+        CHECK_FALSE(db.RestoreFrom(missingConstraintBackupPath, &error));
+        CHECK(error.Contains("missing a required constraint"));
+        REQUIRE(db.IsOpen());
+        CHECK(GetRowCount(db, "members") == 10);
+
+        wxFileName workFn(workingDbPath);
+        workFn.Normalize(wxPATH_NORM_ABSOLUTE);
+        wxDir workDir(workFn.GetPath());
+        wxString matchedFile;
+        const wxString safetyPattern = workFn.GetFullName() + ".backup.*";
+        CHECK_FALSE(workDir.GetFirst(&matchedFile, safetyPattern, wxDIR_FILES));
+    }
+
+    SECTION("Restore is refused while another DbService connection holds the database open") {
+        msms::DbService otherInstance;
+        REQUIRE(otherInstance.Open(workingDbPath, &error));
+        REQUIRE(otherInstance.IsOpen());
+
+        CHECK_FALSE(db.RestoreFrom(validBackupPath, &error));
+        CHECK(error.Contains("another MSMS Manager instance"));
+        REQUIRE(db.IsOpen());
+        REQUIRE(otherInstance.IsOpen());
+        CHECK(GetRowCount(db, "members") == 10);
+        CHECK(GetRowCount(otherInstance, "members") == 10);
+
+        wxFileName workFn(workingDbPath);
+        workFn.Normalize(wxPATH_NORM_ABSOLUTE);
+        wxDir workDir(workFn.GetPath());
+        wxString matchedFile;
+        const wxString safetyPattern = workFn.GetFullName() + ".backup.*";
+        CHECK_FALSE(workDir.GetFirst(&matchedFile, safetyPattern, wxDIR_FILES));
+
+        otherInstance.Close();
+        REQUIRE(db.RestoreFrom(validBackupPath, &error));
+        REQUIRE(db.IsOpen());
+        CHECK(GetRowCount(db, "members") == 10);
+
+        // Remove the safety copy created by the successful retry above.
+        wxFileName workFnAfter(workingDbPath);
+        workFnAfter.Normalize(wxPATH_NORM_ABSOLUTE);
+        wxDir workDirAfter(workFnAfter.GetPath());
+        wxString matchedFileAfter;
+        bool hasSafetyFile = workDirAfter.GetFirst(
+            &matchedFileAfter, workFnAfter.GetFullName() + ".backup.*", wxDIR_FILES);
+        while (hasSafetyFile) {
+            wxRemoveFile(workFnAfter.GetPathWithSep() + matchedFileAfter);
+            hasSafetyFile = workDirAfter.GetNext(&matchedFileAfter);
+        }
     }
 
     SECTION("Successful restore creates timestamped safety copy and recovers state") {
@@ -433,6 +571,10 @@ TEST_CASE(
         wxRemoveFile(validBackupPath);
     if (wxFileExists(corruptedBackupPath))
         wxRemoveFile(corruptedBackupPath);
+    if (wxFileExists(incompatibleBackupPath))
+        wxRemoveFile(incompatibleBackupPath);
+    if (wxFileExists(missingConstraintBackupPath))
+        wxRemoveFile(missingConstraintBackupPath);
 }
 
 // ---------------------------------------------------------------------------
