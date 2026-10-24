@@ -30,6 +30,10 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Validate Linux packaging script syntax
+        if: matrix.platform == 'linux'
+        run: bash -n packaging/linux/appimage.sh
+
       - name: Set up MSVC
         if: matrix.platform == 'windows'
         uses: ilammy/msvc-dev-cmd@v1
