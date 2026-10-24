@@ -176,7 +176,6 @@ void DatabaseSelectionDialog::OnCreateNew(wxCommandEvent& /*event*/) {
     wxString error;
     if (!m_dbService.CreateNew(tempPath, &error) || !m_dbService.CheckCompatibility(&error)) {
         m_dbService.Close();
-        wxRemoveFile(DatabasePathLockFile(tempPath));
         if (wxFileExists(tempPath)) {
             wxRemoveFile(tempPath);
         }
@@ -186,13 +185,11 @@ void DatabaseSelectionDialog::OnCreateNew(wxCommandEvent& /*event*/) {
     }
 
     m_dbService.Close();
-    wxRemoveFile(DatabasePathLockFile(tempPath));
 
     // Recheck immediately before moving the new file into place. This closes the
     // practical race window but is not an atomic compare-and-swap against arbitrary
     // external filesystem writers.
     if (!ConfirmDestinationIdentityIsStable(this, path, approvedIdentity)) {
-        wxRemoveFile(DatabasePathLockFile(tempPath));
         if (wxFileExists(tempPath)) {
             wxRemoveFile(tempPath);
         }
@@ -200,7 +197,6 @@ void DatabaseSelectionDialog::OnCreateNew(wxCommandEvent& /*event*/) {
     }
 
     if (!wxRenameFile(tempPath, path, true)) {
-        wxRemoveFile(DatabasePathLockFile(tempPath));
         if (wxFileExists(tempPath)) {
             wxRemoveFile(tempPath);
         }
