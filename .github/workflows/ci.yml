@@ -68,7 +68,7 @@ jobs:
 
       - name: Test (Windows)
         if: matrix.platform == 'windows'
-        run: ctest --preset ci-windows
+        run: ctest --preset ci-windows --output-on-failure --timeout 120
 
       - name: Stage artifact (Windows)
         if: matrix.platform == 'windows'
@@ -135,7 +135,7 @@ jobs:
               ccache --show-stats
               cmake --preset ci-linux
               cmake --build --preset ci-linux --parallel 2
-              ctest --preset ci-linux
+              ctest --preset ci-linux --output-on-failure --timeout 120
 
               mkdir -p AppDir/usr/bin out
               cp build/ci-linux/msms AppDir/usr/bin/msms-manager
